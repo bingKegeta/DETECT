@@ -48,9 +48,13 @@ To get started with DETECT, follow these steps:
 ## 🔧 Usage
 
 1. **Run the Application:**
-
+   - To run it with live webcam (inbuilt only as of now):
    ```bash
-   python detect.py
+   python iris_detect.py --webcam
+   ```
+   - To run it with a separate image:
+   ```bash
+   python iris_detect.py --image <image-path>
    ```
 
 2. **Start Analyzing:**
