@@ -58,15 +58,27 @@ def detect_pupil(eye_region):
 
     return None
 
-def calculate_gaze(pupil_position, eye_region_width):
+def calculate_gaze(pupil_position, eye_region_width, eye_region_height):
     x_ratio = pupil_position[0] / eye_region_width
+    y_ratio = pupil_position[1] / eye_region_height
 
+    # Determine horizontal gaze direction (Left, Right, Center)
     if x_ratio < 0.4:
-        return 'Right'
+        horizontal_gaze = 'Right'
     elif x_ratio > 0.6:
-        return 'Left'
+        horizontal_gaze = 'Left'
     else:
-        return 'Center'
+        horizontal_gaze = 'Center'
+
+    # Determine vertical gaze direction (Up, Down, Center)
+    if y_ratio < 0.4:
+        vertical_gaze = 'Up'
+    elif y_ratio > 0.6:
+        vertical_gaze = 'Down'
+    else:
+        vertical_gaze = 'Center'
+
+    return horizontal_gaze, vertical_gaze
 
 while cap.isOpened():
     ret, frame = cap.read()
@@ -109,8 +121,8 @@ while cap.isOpened():
                 cv2.circle(left_eye_region, (left_pupil_x, left_pupil_y), left_pupil[2], (255, 0, 0), 2)
 
                 # Determine the gaze direction based on pupil position
-                left_gaze = calculate_gaze((left_pupil_x, left_pupil_y), left_eye_region.shape[1])
-                cv2.putText(frame, f"Left Eye Gaze: {left_gaze}", (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                left_gaze_h, left_gaze_v = calculate_gaze((left_pupil_x, left_pupil_y), left_eye_region.shape[1], left_eye_region.shape[0])
+                cv2.putText(frame, f"Left Eye Gaze: {left_gaze_h}-{left_gaze_v}", (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
             if right_pupil:
                 # Smooth the pupil position
@@ -120,8 +132,8 @@ while cap.isOpened():
                 cv2.circle(right_eye_region, (right_pupil_x, right_pupil_y), right_pupil[2], (255, 0, 0), 2)
 
                 # Determine the gaze direction based on pupil position
-                right_gaze = calculate_gaze((right_pupil_x, right_pupil_y), right_eye_region.shape[1])
-                cv2.putText(frame, f"Right Eye Gaze: {right_gaze}", (30, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                right_gaze_h, right_gaze_v = calculate_gaze((right_pupil_x, right_pupil_y), right_eye_region.shape[1], right_eye_region.shape[0])
+                cv2.putText(frame, f"Right Eye Gaze: {right_gaze_h}-{right_gaze_v}", (30, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
             # Display left and right eyes in their positions on the main frame
             cv2.imshow('Eye Tracking', frame)
