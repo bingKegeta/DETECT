@@ -1,203 +1,183 @@
 import cv2
-import mediapipe as mp
-import numpy as np
 import argparse
-from collections import deque
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.signal import savgol_filter
+import mediapipe as mp
+import time
 
-# Initialize Mediapipe face mesh
+# Initialize Mediapipe for face and iris detection
 mp_face_mesh = mp.solutions.face_mesh
 mp_drawing = mp.solutions.drawing_utils
 face_mesh = mp_face_mesh.FaceMesh(max_num_faces=1, refine_landmarks=True)
 
-# Deques for smoothing pupil position
-left_pupil_queue = deque(maxlen=5)
-right_pupil_queue = deque(maxlen=5)
+# Savitzky-Golay filter parameters
+WINDOW_LENGTH = 9  # Must be odd
+POLYORDER = 2
 
-# Helper function to smooth the pupil position using moving average
-def smooth_position(queue, new_position):
-    queue.append(new_position)
-    return np.mean(queue, axis=0).astype(int)
-
-def isolate_eye_region(frame, eye_landmarks):
-    # Extract the eye region using the bounding box of the eye landmarks
-    x_min = np.min(eye_landmarks[:, 0])
-    x_max = np.max(eye_landmarks[:, 0])
-    y_min = np.min(eye_landmarks[:, 1]) 
-    y_max = np.max(eye_landmarks[:, 1])
-
-    # Extract the eye region from the frame
-    return frame[y_min:y_max, x_min:x_max], (x_min, y_min)
-
-def detect_pupil(eye_region):
-    # Convert to grayscale for thresholding
-    gray_eye = cv2.cvtColor(eye_region, cv2.COLOR_BGR2GRAY)
+# CLI argument parsing
+def parse_args():
+    parser = argparse.ArgumentParser(description="Gaze and pupil tracking with smoothing and graphing options.")
     
-    # Enhance contrast using histogram equalization
-    gray_eye = cv2.equalizeHist(gray_eye)
+    parser.add_argument('--source', type=str, required=True, choices=['webcam', 'image', 'video'],
+                        help="Source type for gaze detection: 'webcam', 'image', or 'video'.")
     
-    # Apply a Gaussian blur to reduce noise
-    blurred_eye = cv2.GaussianBlur(gray_eye, (7, 7), 0)
+    parser.add_argument('--path', type=str, required=False, help="Path to image or video file.")
     
-    # Adaptive thresholding for more robust pupil detection in varying lighting
-    thresholded_eye = cv2.adaptiveThreshold(blurred_eye, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 11, 5)
+    parser.add_argument('--graph', action='store_true', help="Show a real-time graph of gaze coordinates.")
+    
+    return parser.parse_args()
 
-    # Find contours (the pupil will be the largest contour)
-    contours, _ = cv2.findContours(thresholded_eye, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+# Function to apply Savitzky-Golay filter for smoothing
+def apply_savgol_filter(data):
+    if len(data) >= WINDOW_LENGTH:
+        return savgol_filter(data, WINDOW_LENGTH, POLYORDER)
+    return data
 
-    if contours:
-        # Find the largest contour, assuming it's the pupil
-        max_contour = max(contours, key=cv2.contourArea)
-        (x, y), radius = cv2.minEnclosingCircle(max_contour)
-        return int(x), int(y), int(radius)
+def get_affine_transform(landmarks, img_w, img_h):
+    """
+    Compute the affine transformation matrix to align the face based on stable facial landmarks.
+    We use the left eye, right eye, and nose bridge to stabilize head position.
+    """
+    # Choose three landmarks: left eye, right eye, and nose bridge
+    left_eye = np.array([landmarks[33].x * img_w, landmarks[33].y * img_h])
+    right_eye = np.array([landmarks[263].x * img_w, landmarks[263].y * img_h])
+    nose_bridge = np.array([landmarks[1].x * img_w, landmarks[1].y * img_h])
 
-    return None
+    # Define the reference points for alignment (centered, aligned face)
+    ref_left_eye = np.array([img_w * 0.3, img_h * 0.4])
+    ref_right_eye = np.array([img_w * 0.7, img_h * 0.4])
+    ref_nose_bridge = np.array([img_w * 0.5, img_h * 0.6])
 
-def calculate_gaze(pupil_position, eye_region_width, eye_region_height):
-    x_ratio = pupil_position[0] / eye_region_width
-    y_ratio = pupil_position[1] / eye_region_height
+    src_points = np.array([left_eye, right_eye, nose_bridge], dtype=np.float32)
+    dst_points = np.array([ref_left_eye, ref_right_eye, ref_nose_bridge], dtype=np.float32)
 
-    # Determine horizontal gaze direction (Left, Right, Center)
-    if x_ratio < 0.4:
-        horizontal_gaze = 'Left'
-    elif x_ratio > 0.6:
-        horizontal_gaze = 'Right'
-    else:
-        horizontal_gaze = 'Center'
+    # Compute the affine transformation matrix
+    affine_matrix = cv2.getAffineTransform(src_points, dst_points)
+    
+    return affine_matrix
 
-    # Determine vertical gaze direction (Up, Down, Center)
-    if y_ratio < 0.4:
-        vertical_gaze = 'Up'
-    elif y_ratio > 0.6:
-        vertical_gaze = 'Down'
-    else:
-        vertical_gaze = 'Center'
-
-    return horizontal_gaze, vertical_gaze
-
-def process_frame(frame):
-    h, w, _ = frame.shape
+def process_frame(frame, x_data, y_data):
+    img_h, img_w, _ = frame.shape
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = face_mesh.process(rgb_frame)
 
-    # Process the frame for face landmarks
-    result = face_mesh.process(rgb_frame)
+    if results.multi_face_landmarks:
+        for face_landmarks in results.multi_face_landmarks:
+            # Get the affine transformation matrix to stabilize the face
+            affine_matrix = get_affine_transform(face_landmarks.landmark, img_w, img_h)
 
-    if result.multi_face_landmarks:
-        for face_landmarks in result.multi_face_landmarks:
-            # Draw only eye landmarks, remove full face drawing
-            LEFT_EYE_INDICES = [362, 385, 387, 263, 373, 380]
-            RIGHT_EYE_INDICES = [33, 160, 158, 133, 153, 144]
+            # Apply the affine transformation to the frame
+            stabilized_frame = cv2.warpAffine(frame, affine_matrix, (img_w, img_h))
 
-            for idx in LEFT_EYE_INDICES + RIGHT_EYE_INDICES:
-                landmark = face_landmarks.landmark[idx]
-                x, y = int(landmark.x * w), int(landmark.y * h)
-                cv2.circle(frame, (x, y), 1, (0, 255, 0), -1)
+            # After stabilization, extract the iris coordinates
+            left_iris_x = face_landmarks.landmark[468].x * img_w
+            left_iris_y = face_landmarks.landmark[468].y * img_h
+            right_iris_x = face_landmarks.landmark[473].x * img_w
+            right_iris_y = face_landmarks.landmark[473].y * img_h
 
-            # Extract left and right eye landmarks
-            left_eye_landmarks = np.array([(int(face_landmarks.landmark[i].x * w),
-                                            int(face_landmarks.landmark[i].y * h)) for i in LEFT_EYE_INDICES])
-            right_eye_landmarks = np.array([(int(face_landmarks.landmark[i].x * w),
-                                             int(face_landmarks.landmark[i].y * h)) for i in RIGHT_EYE_INDICES])
+            # Apply the same affine transformation to the iris coordinates
+            left_iris_transformed = np.dot(affine_matrix, np.array([left_iris_x, left_iris_y, 1]))
+            right_iris_transformed = np.dot(affine_matrix, np.array([right_iris_x, right_iris_y, 1]))
 
-            # Isolate the left and right eye regions
-            left_eye_region, left_eye_origin = isolate_eye_region(frame, left_eye_landmarks)
-            right_eye_region, right_eye_origin = isolate_eye_region(frame, right_eye_landmarks)
+            # Average the iris positions for better stability
+            x_data.append((left_iris_transformed[0] + right_iris_transformed[0]) / 2)
+            y_data.append((left_iris_transformed[1] + right_iris_transformed[1]) / 2)
 
-            # Detect pupils in the left and right eyes
-            left_pupil = detect_pupil(left_eye_region)
-            right_pupil = detect_pupil(right_eye_region)
+            # Draw the stabilized iris positions on the frame
+            cv2.circle(stabilized_frame, (int(left_iris_transformed[0]), int(left_iris_transformed[1])), 2, (0, 255, 0), -1)
+            cv2.circle(stabilized_frame, (int(right_iris_transformed[0]), int(right_iris_transformed[1])), 2, (0, 255, 0), -1)
 
-            if left_pupil:
-                # Smooth the pupil position
-                left_pupil_x, left_pupil_y = smooth_position(left_pupil_queue, left_pupil[:2])
-                
-                # Draw the detected pupil on the left eye
-                cv2.circle(left_eye_region, (left_pupil_x, left_pupil_y), left_pupil[2], (255, 0, 0), 2)
+    return stabilized_frame
 
-                # Determine the gaze direction based on pupil position
-                left_gaze_h, left_gaze_v = calculate_gaze((left_pupil_x, left_pupil_y), left_eye_region.shape[1], left_eye_region.shape[0])
-                cv2.putText(frame, f"Left Eye Gaze: {left_gaze_h}-{left_gaze_v}", (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
-            if right_pupil:
-                # Smooth the pupil position
-                right_pupil_x, right_pupil_y = smooth_position(right_pupil_queue, right_pupil[:2])
-                
-                # Draw the detected pupil on the right eye
-                cv2.circle(right_eye_region, (right_pupil_x, right_pupil_y), right_pupil[2], (255, 0, 0), 2)
-
-                # Determine the gaze direction based on pupil position
-                right_gaze_h, right_gaze_v = calculate_gaze((right_pupil_x, right_pupil_y), right_eye_region.shape[1], right_eye_region.shape[0])
-                cv2.putText(frame, f"Right Eye Gaze: {right_gaze_h}-{right_gaze_v}", (30, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
-    return frame
-
+# Main function to handle video/webcam or image processing
 def main():
-    # Argument parsing
-    parser = argparse.ArgumentParser(description="Gaze Tracking using Eye and Pupil Detection")
-    parser.add_argument('--source', choices=['webcam', 'image', 'video'], required=True, help="Source type: webcam, image, or video")
-    parser.add_argument('--path', type=str, help="Path to image or video file (required if source is image or video)")
-    args = parser.parse_args()
+    args = parse_args()
 
-    windowName = "Gaze-Tracking"
-    
-    # Webcam mode
+    # Initialize video capture based on CLI input
     if args.source == 'webcam':
-        cv2.namedWindow(windowName)
         cap = cv2.VideoCapture(0)
-        cap.set(3, 1080)
-        cap.set(4, 1920)
-
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            frame = process_frame(frame)
-            cv2.imshow(windowName, frame)
-
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-
-        cap.release()
-        cv2.destroyAllWindows()
-
-    # Image mode
-    elif args.source == 'image':
+    elif args.source in ['image', 'video']:
         if not args.path:
-            print("Error: You must provide a valid image path using --path")
+            print("You must provide a --path to the image or video file.")
             return
-
-        frame = cv2.imread(args.path)
-        cv2.resize(frame, (1920, 1080), interpolation=cv2.INTER_LINEAR)
-        if frame is None:
-            print(f"Error: Could not read image at {args.path}")
-            return
-
-        frame = process_frame(frame)
-        cv2.imshow('Eye Tracking', frame)
-        # cv2.set(4, 1920)
-        cv2.waitKey(0)  # Wait until a key is pressed
-        cv2.destroyAllWindows()
-
-    # Video mode
-    elif args.source == 'video':
-        if not args.path:
-            print("Error: You must provide a valid video path using --path")
-            return
-
         cap = cv2.VideoCapture(args.path)
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
+    else:
+        print("Invalid source type provided. Use --source with 'webcam', 'image', or 'video'.")
+        return
 
-            frame = process_frame(frame)
-            cv2.imshow('Eye Tracking', frame)
+    # Initialize data arrays to store gaze coordinates over time
+    x_data = []
+    y_data = []
+    time_data = []
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+    if args.graph:
+        # Initialize the plot
+        plt.ion()  # Turn on interactive plotting
+        fig, ax = plt.subplots()
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel('Gaze Coordinates')
+        ax.set_title('Gaze Tracking Over Time')
 
+    start_time = time.time()
+
+    # If the source is an image, process it directly
+    if args.source == 'image':
+        ret, frame = cap.read()
+        if ret:
+            frame = process_frame(frame, x_data, y_data)
+            cv2.imshow('Gaze Tracking', frame)
+            if args.graph:
+                plt.pause(0.01)
+            cv2.waitKey(0)
+        else:
+            print("Unable to read image.")
         cap.release()
         cv2.destroyAllWindows()
+        if args.graph:
+            plt.close()
+        return
+
+    # For video or webcam, process frames in a loop
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Calculate the elapsed time
+        current_time = time.time() - start_time
+        time_data.append(current_time)
+
+        # Process the frame to detect and smooth gaze coordinates
+        frame = process_frame(frame, x_data, y_data)
+
+        # Apply Savitzky-Golay filter for smoothing x and y coordinates
+        x_data_smoothed = apply_savgol_filter(x_data)
+        y_data_smoothed = apply_savgol_filter(y_data)
+
+        # Display the frame with gaze landmarks (iris detection shown)
+        cv2.imshow('Gaze Tracking', frame)
+
+        # Plot the smoothed gaze coordinates over time if graph is enabled
+        if args.graph:
+            ax.clear()
+            ax.plot(time_data, x_data_smoothed, label="X Coordinate (Left-Right)")
+            ax.plot(time_data, y_data_smoothed, label="Y Coordinate (Up-Down)")
+            ax.set_xlabel('Time (s)')
+            ax.set_ylabel('Gaze Coordinates')
+            ax.set_title('Gaze Tracking Over Time')
+            ax.legend()
+            plt.pause(0.01)
+
+        # Exit on pressing 'q'
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    # Release resources
+    cap.release()
+    cv2.destroyAllWindows()
+    if args.graph:
+        plt.close()
 
 if __name__ == "__main__":
     main()
