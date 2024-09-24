@@ -50,11 +50,15 @@ To get started with DETECT, follow these steps:
 1. **Run the Application:**
    - To run it with live webcam (inbuilt only as of now):
    ```bash
-   python iris_detect.py --webcam
+   python gaze_detect.py --source webcam
    ```
    - To run it with a separate image:
    ```bash
-   python iris_detect.py --image <image-path>
+   python iris_detect.py --source image --path /path/to/image
+   ```
+   - To run it with a separate video:
+   ```bash
+   python gaze_detect.py --source video --path /path/to/video
    ```
 
 2. **Start Analyzing:**
