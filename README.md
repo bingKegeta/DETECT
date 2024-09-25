@@ -21,7 +21,7 @@ To get started with DETECT, follow these steps:
 1. **Clone the Repository:**
 
    ```bash
-   git clone https://github.com/yourusername/DETECT.git
+   git clone https://github.com/bingKegeta/DETECT.git
    cd DETECT
    ```
 
