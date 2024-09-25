@@ -60,6 +60,10 @@ To get started with DETECT, follow these steps:
    ```bash
    python gaze_detect.py --source video --path /path/to/video
    ```
+   - **(Optional)** To draw a graph of the $x$ and $y$ axes of eye movement for some visuals:
+   ```bash
+   python gaze_detect.py --source <> <--path <>> --graph
+   ```
 
 2. **Start Analyzing:**
    - The application will initiate your camera and begin tracking eye movements.
