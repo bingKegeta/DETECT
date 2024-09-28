@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gaze Detection WebApp</title>
+</head>
+<body>
+    <h1>Gaze Detection</h1>
+    <video id="videoElement" autoplay></video>
+    <button onclick="captureFrame()">Analyze Frame</button>
+    <div id="gazeData"></div>
+
+    <script>
+        const video = document.querySelector("#videoElement");
+
+        // Capture the webcam stream
+        if (navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(function (stream) {
+                    video.srcObject = stream;
+                })
+                .catch(function (err0r) {
+                    console.log("Something went wrong!");
+                });
+        }
+
+        // Capture and send the current frame to the backend
+        function captureFrame() {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Convert canvas to Blob
+            canvas.toBlob(function(blob) {
+                const formData = new FormData();
+                formData.append('frame', blob);
+
+                // Send the frame to the backend for processing
+                fetch('/process-frame', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    console.log(data);
+                    displayGazeData(data);
+                });
+            });
+        }
+
+        // Display the gaze data (x and y coordinates)
+        function displayGazeData(data) {
+            const gazeDataDiv = document.getElementById("gazeData");
+            gazeDataDiv.innerHTML = `<p>X Coordinates: ${data.x_data}</p><p>Y Coordinates: ${data.y_data}</p>`;
+        }
+    </script>
+</body>
+</html>
