@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> **NEW MODULAR VERSION IS RELEASED!**
+> 
+> This version should fix the videos not playing in certain cases and contain a couple of new features including an option to export to a csv, choose to use affine (face normalization) mode or not and some minor graphing fixes
+
 # DETECT: Deception Tracking Through Eye Cues Technology
 
 > Note: This project has just been started and is mostly research as of now.
@@ -36,7 +41,7 @@ To get started with DETECT, follow these steps:
    python -m venv env
    source env/bin/activate  # On Windows, use `env\Scripts\activate`
    ```
-   - Docker: Will be done on 1st MVP
+   - Docker: 👨‍🍳🍳
    - Others: Task will be left to the reader
 
 3. **Install Dependencies:**
@@ -47,27 +52,39 @@ To get started with DETECT, follow these steps:
 
 ## 🔧 Usage
 
-1. **Run the Application:**
+1. **Run the Application (Basic):**
    - To run it with live webcam (inbuilt only as of now):
    ```bash
-   python gaze_detect.py --source webcam
+   python main.py --source webcam
    ```
    - To run it with a separate image:
    ```bash
-   python iris_detect.py --source image --path /path/to/image
+   python main.py --source image --path /path/to/image
    ```
    - To run it with a separate video:
    ```bash
-   python gaze_detect.py --source video --path /path/to/video
+   python main.py --source video --path /path/to/video
    ```
    - **(Optional)** To draw a graph of the $x$ and $y$ axes of eye movement for some visuals:
    ```bash
-   python gaze_detect.py --source <> <--path <>> --graph
+   python main.py --source <> <--path <>> --graph
    ```
 
 2. **Start Analyzing:**
    - The application will initiate your camera and begin tracking eye movements.
    - Use the provided interface to view and analyze gaze data.
+
+## ⚙️ Features
+
+The following features are currently available (almost all are experimental :P):
+|Feature|Description|
+|-------|-----------|
+|```--affine```|Use the Face normalization algorithm for possible improvement in precision|
+|```--graph```|Graph the x-time and y-time plots to see the changes in real time|
+|```--csv [FILENAME]```|Export the tracked eye data into a csv file for advanced analysis|
+|```--csv_interval [sec]```|🚨 **[Doesn't work]** Sets the time interval between each collected data point for the csv|
+___
+More features will be coming soon...
 
 <!-- ## 📚 Documentation
 
