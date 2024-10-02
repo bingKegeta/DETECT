@@ -127,7 +127,7 @@ def plot_final_graphs(time_data, x_data, y_data, heatmap_data):
 
     plt.tight_layout()
     plt.savefig('final_comprehensive_plots.png')  # Save all plots as a single image
-    plt.show()
+    # plt.show()
 
     # # Plot Final Heatmap in a Separate Figure
     # plt.figure(figsize=(10, 6))
