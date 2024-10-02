@@ -2,6 +2,7 @@ import cv2
 import time
 import matplotlib.pyplot as plt
 from src.process import process_frame
+from src.animation import create_gaze_animation
 from src.graph import plot_gaze_tracking, plot_final_graphs
 from src.export import export_csv
 from src.args import parse_args
@@ -12,7 +13,7 @@ def main():
 
     # Initialize video capture based on CLI input
     if args.source == 'webcam':
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(1)
     elif args.source in ['image', 'video']:
         if not args.path:
             print("Error: --path argument is required when --source is 'image' or 'video'.")
@@ -128,8 +129,21 @@ def main():
     cv2.destroyAllWindows()
 
     if args.graph:
-        # Plot the final comprehensive graphs
-        plot_final_graphs(time_data, x_data, y_data, heatmap_data)
+        gaze_positions = np.column_stack((x_data, y_data)).tolist() # Convert to list of (x, y) tuples
+        
+        # Calculate total duration
+        if time_data:
+            total_duration = time_data[-1] - time_data[0]
+            if total_duration > 0:
+                fps = len(gaze_positions) / total_duration
+            else:
+                fps = 30  # Default FPS if duration is zero
+        else:
+            fps = 30
+
+        create_gaze_animation(gaze_positions, width, height, fps=int(fps)) # Create gaze animation
+
+        plot_final_graphs(time_data, x_data, y_data, heatmap_data) # Plot final graphs
 
 if __name__ == "__main__":
     main()
