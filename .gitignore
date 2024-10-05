@@ -3,3 +3,4 @@ src/__pycache__/*
 test_media/*
 *.mp4
 *.png
+*.json
