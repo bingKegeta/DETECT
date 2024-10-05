@@ -1,0 +1,13 @@
+{
+    "source": "webcam",
+    "path": null,
+    "graph": false,
+    "affine": false,
+    "csv_interval": 1.0,
+    "export": { 
+        "csv": true, 
+        "graph": true,
+        "animation": true
+    },
+    "export_dir": "output/"
+}
