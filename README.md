@@ -1,7 +1,10 @@
 > [!IMPORTANT]
-> **NEW MODULAR VERSION IS RELEASED!**
+> **MIGRATION TO JSON COMPLETED!!!**
 > 
-> This version should fix the videos not playing in certain cases and contain a couple of new features including an option to export to a csv, choose to use affine (face normalization) mode or not and some minor graphing fixes
+> This version removes the cli arguments previously required to run various configs in favor of using a JSON config file. 
+
+> [!NOTE]
+> It is now possible to export the raw coordinates of the eyes as a csv file, a png with 4 graphs showing more insight into the gathered data and a nifty mp4 animation showcasing an estimated simulation of the gaze through the gathered data!
 
 # DETECT: Deception Tracking Through Eye Cues Technology
 
@@ -13,11 +16,24 @@ Welcome to DETECT! This project aims to revolutionize the field of deception det
 
 DETECT (Deception Tracking Through Eye Cues Technology) is a cutting-edge project designed to track and analyze eye movements to assist in identifying potential deception. By triangulating the position of the iris, DETECT provides valuable insights into gaze patterns that can be indicative of truthfulness or deception.
 
-## 🚀 Features
+<!-- ## 🚀 Features
 
 - **Real-Time Gaze Tracking:** Accurate triangulation of the iris location for precise gaze direction analysis.
 - **MediaPipe Integration:** Harnesses the power of MediaPipe for efficient and reliable eye cue extraction.
-- **Deception Insights:** Provides a foundation for further research into gaze patterns and their correlation with deceptive behavior.
+- **Deception Insights:** Provides a foundation for further research into gaze patterns and their correlation with deceptive behavior. -->
+## ⚙️ Features
+
+The following features are currently available (almost all are experimental :P):
+|Feature|Description|
+|-------|-----------|
+|```affine```|Use the Face normalization algorithm for possible improvement in precision|
+|```graph```|Graph the x-time and y-time plots to see the changes in real time|
+|```export::csv```|Export the tracked eye data into a csv file for advanced analysis|
+|```csv_interval [sec]```|🚨 **[Doesn't work]** Sets the time interval between each collected data point for the csv|
+|```export::graph```|Export the tracked eye data and graph it for easier comprehension and basic analysis|
+|```export::animation```|Estimate the gaze direction over time based on the tracked eye data|
+___
+More features will be coming soon...
 
 ## 🛠️ Installation
 
@@ -52,39 +68,31 @@ To get started with DETECT, follow these steps:
 
 ## 🔧 Usage
 
-1. **Run the Application (Basic):**
-   - To run it with live webcam (inbuilt only as of now):
-   ```bash
-   python main.py --source webcam
+1. **Make a configuration file (JSON):**
+   - The file contains various options but the basic schema is this:
+   ```json
+   {
+      "source":["webcam", "image", "video"], # Choose any one of those
+      "path": "/path/to/media", # Only include when the source is not webcam
+      "graph": boolean, # Only if you want graph updates (fps will be hit)
+      "affine": boolean, # If you want affine tranform processing
+      "csv_interval": number, # Doesn't work yet
+      "export": {
+         "csv": boolean, # Do you want csv output?
+         "graph": boolean, # Do you want a comprehensive graph?
+         "animation": boolean, # Do you want a nifty animation?
+      },
+      "export_dir": "/path/to/dir/" # Where do you want to store those files?
+   }
    ```
-   - To run it with a separate image:
+2. **Run the Application:**
    ```bash
-   python main.py --source image --path /path/to/image
-   ```
-   - To run it with a separate video:
-   ```bash
-   python main.py --source video --path /path/to/video
-   ```
-   - **(Optional)** To draw a graph of the $x$ and $y$ axes of eye movement for some visuals:
-   ```bash
-   python main.py --source <> <--path <>> --graph
+   python main.py config.json
    ```
 
-2. **Start Analyzing:**
+3. **Start Analyzing:**
    - The application will initiate your camera and begin tracking eye movements.
    - Use the provided interface to view and analyze gaze data.
-
-## ⚙️ Features
-
-The following features are currently available (almost all are experimental :P):
-|Feature|Description|
-|-------|-----------|
-|```--affine```|Use the Face normalization algorithm for possible improvement in precision|
-|```--graph```|Graph the x-time and y-time plots to see the changes in real time|
-|```--csv [FILENAME]```|Export the tracked eye data into a csv file for advanced analysis|
-|```--csv_interval [sec]```|🚨 **[Doesn't work]** Sets the time interval between each collected data point for the csv|
-___
-More features will be coming soon...
 
 <!-- ## 📚 Documentation
 
