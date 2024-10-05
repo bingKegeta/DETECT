@@ -73,7 +73,7 @@ def plot_gaze_tracking(time_data, x_data, y_data, ax_x, ax_y, scatter_ax, scatte
 
     plt.pause(0.001)  # Minimal pause for responsiveness
 
-def plot_final_graphs(time_data, x_data, y_data, heatmap_data):
+def plot_final_graphs(time_data, x_data, y_data, heatmap_data, save_path='final_comprehensive_plots.png'):
     """
     Plot all final comprehensive graphs after the session ends.
     """
@@ -126,7 +126,7 @@ def plot_final_graphs(time_data, x_data, y_data, heatmap_data):
     cbar3d = fig.colorbar(scatter3d, ax=ax4, label='Time (s)')
 
     plt.tight_layout()
-    plt.savefig('final_comprehensive_plots.png')  # Save all plots as a single image
+    plt.savefig(save_path)  # Save all plots as a single image
     # plt.show()
 
     # # Plot Final Heatmap in a Separate Figure

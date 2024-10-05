@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
 
-def create_gaze_animation(eye_positions, frame_width, frame_height, fps=30):
+def create_gaze_animation(eye_positions, frame_width, frame_height, fps=30, save_path='animation.mp4'):
     """
     Creates and saves a gaze animation based on eye_positions.
 
@@ -93,7 +93,7 @@ def create_gaze_animation(eye_positions, frame_width, frame_height, fps=30):
 
     try:
         # Save the animation as a video file
-        ani.save('animation.mp4', writer='ffmpeg', fps=fps)
+        ani.save(save_path, writer='ffmpeg', fps=fps)
         print("Gaze animation saved as 'animation.mp4'")
     except FileNotFoundError:
         print("Error: ffmpeg is not installed or not found in PATH.")
