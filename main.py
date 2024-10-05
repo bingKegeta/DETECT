@@ -1,26 +1,40 @@
 import cv2
 import time
 import matplotlib.pyplot as plt
+from src.args import load_config
 from src.process import process_frame
 from src.animation import create_gaze_animation
 from src.graph import plot_gaze_tracking, plot_final_graphs
 from src.export import export_csv
-from src.args import parse_args
 import numpy as np
+import sys
+import os
 
 def main():
-    args = parse_args()
+    # Ensure that the JSON file path is provided as a command-line argument
+    if len(sys.argv) != 2:
+        print("Usage: python main.py <config.json>")
+        return
+    
+    config_file = sys.argv[1]
 
-    # Initialize video capture based on CLI input
-    if args.source == 'webcam':
-        cap = cv2.VideoCapture(1)
-    elif args.source in ['image', 'video']:
-        if not args.path:
-            print("Error: --path argument is required when --source is 'image' or 'video'.")
+    # Load the configuration from the JSON file
+    try:
+        config = load_config(config_file)
+    except Exception as e:
+        print(f"Error loading configuration: {e}")
+        return
+
+    # Initialize video capture based on the configuration
+    if config['source'] == 'webcam':
+        cap = cv2.VideoCapture(0)
+    elif config['source'] in ['image', 'video']:
+        if not config['path']:
+            print("Error: 'path' field is required in the configuration when 'source' is 'image' or 'video'.")
             return
-        cap = cv2.VideoCapture(args.path)
+        cap = cv2.VideoCapture(config['path'])
     else:
-        print("Error: Invalid source type provided. Use --source with 'webcam', 'image', or 'video'.")
+        print("Error: Invalid source type provided in the configuration. Use 'webcam', 'image', or 'video'.")
         return
 
     # Check if video capture is initialized
@@ -47,7 +61,7 @@ def main():
     time_data = []
 
     # Set up real-time graphing if required
-    if args.graph:
+    if config['graph']:
         plt.ion()
 
         # Create a figure with 4 subplots: 2 line plots, 1 2D scatter, and 1 3D scatter
@@ -87,6 +101,14 @@ def main():
     start_time = time.time()
     last_csv_time = 0  # For controlling CSV export interval
 
+    # Ensure the export directory exists or create it
+    if config['export']['csv'] or config['export']['graph']:
+        try:
+            os.makedirs(config['export_dir'], exist_ok=True)
+        except Exception as e:
+            print(f"Error creating export directory '{config['export_dir']}': {e}")
+            return
+
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
@@ -95,26 +117,19 @@ def main():
         current_time = time.time() - start_time
 
         # Process the frame and update gaze data
-        stabilized_frame, iris_detected = process_frame(frame, x_data, y_data, args.affine)
+        stabilized_frame, iris_detected = process_frame(frame, x_data, y_data, config['affine'])
 
         # If gaze points were detected, update time and plot
         if iris_detected:
             time_data.append(current_time)
 
-            if args.graph:
+            if config['graph']:
                 plot_gaze_tracking(time_data, x_data, y_data, ax_x, ax_y, scatter_ax, scatter3d_ax)
 
-            # # Update heatmap data
-            # # Assuming x_data and y_data are normalized between -1 and 1
-            # # Convert normalized coordinates to pixel indices
-            # x_pixel = int((x_data[-1] + 1) * (width / 2))
-            # y_pixel = int((y_data[-1] + 1) * (height / 2))
-            # if 0 <= x_pixel < width and 0 <= y_pixel < height:
-            #     heatmap_data[y_pixel, x_pixel] += 1
-
-            # Export data to CSV at specified interval
-            if args.csv and current_time - last_csv_time >= args.csv_interval:
-                export_csv(x_data, y_data, time_data, args.csv)
+            # Export data to CSV at specified interval, if enabled
+            if config['export']['csv'] and current_time - last_csv_time >= config['csv_interval']:
+                csv_path = os.path.join(config['export_dir'], "raw_data.csv")
+                export_csv(x_data, y_data, time_data, csv_path)
                 last_csv_time = current_time
 
         # Display video with iris tracking
@@ -128,22 +143,26 @@ def main():
     cap.release()
     cv2.destroyAllWindows()
 
-    if args.graph:
-        gaze_positions = np.column_stack((x_data, y_data)).tolist() # Convert to list of (x, y) tuples
-        
-        # Calculate total duration
-        if time_data:
-            total_duration = time_data[-1] - time_data[0]
-            if total_duration > 0:
-                fps = len(gaze_positions) / total_duration
-            else:
-                fps = 30  # Default FPS if duration is zero
+    gaze_positions = np.column_stack((x_data, y_data)).tolist()  # Convert to list of (x, y) tuples
+    
+    # Calculate total duration
+    if time_data:
+        total_duration = time_data[-1] - time_data[0]
+        if total_duration > 0:
+            fps = len(gaze_positions) / total_duration
         else:
-            fps = 30
+            fps = 30  # Default FPS if duration is zero
+    else:
+        fps = 30
+        
+    # Create gaze animation if animation export is enabled
+    if config['export']['animation']:
+        create_gaze_animation(gaze_positions, width, height, fps=int(fps), save_path=config['animation_out'])
 
-        create_gaze_animation(gaze_positions, width, height, fps=int(fps)) # Create gaze animation
-
-        plot_final_graphs(time_data, x_data, y_data, heatmap_data) # Plot final graphs
+    # Create the graph image if graph export is enabled
+    if config['export']['graph']:
+        plot_final_graphs(time_data, x_data, y_data, heatmap_data, save_path=config['graph_out'])
+    
 
 if __name__ == "__main__":
     main()
