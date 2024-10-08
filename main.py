@@ -1,3 +1,4 @@
+from turtle import st
 import cv2
 import time
 import matplotlib.pyplot as plt
@@ -25,14 +26,22 @@ def main():
         print(f"Error loading configuration: {e}")
         return
 
+    frame_count = 0  # Initialize frame counter for FPS calculation
+    fps = None  # Initialize FPS variable
+
     # Initialize video capture based on the configuration
     if config['source'] == 'webcam':
         cap = cv2.VideoCapture(0)
+        start_time = time.time() # Start time for FPS calculation
     elif config['source'] in ['image', 'video']:
         if not config['path']:
             print("Error: 'path' field is required in the configuration when 'source' is 'image' or 'video'.")
             return
         cap = cv2.VideoCapture(config['path'])
+        fps = cap.get(cv2.CAP_PROP_FPS)  # Get FPS for video files
+        if fps == 0 or fps is None:
+            print("Warning: Unable to determine FPS from video. Defaulting to 30.")
+            fps = 30  # Default FPS if unable to get from video source
     else:
         print("Error: Invalid source type provided in the configuration. Use 'webcam', 'image', or 'video'.")
         return
@@ -50,7 +59,6 @@ def main():
         return
 
     height, width = frame.shape[:2]
-    heatmap_data = np.zeros((height, width), dtype=np.float32)
 
     # Reinitialize video capture to start from the first frame
     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -98,7 +106,6 @@ def main():
         scatter3d_ax.set_zlabel('Time (s)')
         scatter3d_ax.invert_yaxis()
 
-    start_time = time.time()
     last_csv_time = 0  # For controlling CSV export interval
 
     # Ensure the export directory exists or create it
@@ -114,7 +121,11 @@ def main():
         if not ret:
             break
 
-        current_time = time.time() - start_time
+        if fps is None:
+            current_time = time.time() - start_time  # For webcam: Use real-time timestamp
+        else:
+            frame_count += 1  # Increment frame counter
+            current_time = frame_count / fps  # For video files: Use FPS-based timestamp
 
         # Process the frame and update gaze data
         stabilized_frame, iris_detected = process_frame(frame, x_data, y_data, config['affine'])
@@ -144,24 +155,20 @@ def main():
     cv2.destroyAllWindows()
 
     gaze_positions = np.column_stack((x_data, y_data)).tolist()  # Convert to list of (x, y) tuples
-    
     # Calculate total duration
-    if time_data:
-        total_duration = time_data[-1] - time_data[0]
-        if total_duration > 0:
-            fps = len(gaze_positions) / total_duration
+    if config['source'] == 'webcam':
+        if time_data and time_data[-1] > 0:
+            fps = len(gaze_positions) / time_data[-1]
         else:
-            fps = 30  # Default FPS if duration is zero
-    else:
-        fps = 30
-        
+            fps = 30  # Default FPS if unable to calculate
+    
     # Create gaze animation if animation export is enabled
     if config['export']['animation']:
         create_gaze_animation(gaze_positions, width, height, fps=int(fps), save_path=config['animation_out'])
 
     # Create the graph image if graph export is enabled
     if config['export']['graph']:
-        plot_final_graphs(time_data, x_data, y_data, heatmap_data, save_path=config['graph_out'])
+        plot_final_graphs(time_data, x_data, y_data, save_path=config['graph_out'])
     
 
 if __name__ == "__main__":
