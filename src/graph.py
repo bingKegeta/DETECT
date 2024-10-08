@@ -73,7 +73,7 @@ def plot_gaze_tracking(time_data, x_data, y_data, ax_x, ax_y, scatter_ax, scatte
 
     plt.pause(0.001)  # Minimal pause for responsiveness
 
-def plot_final_graphs(time_data, x_data, y_data, heatmap_data, save_path='final_comprehensive_plots.png'):
+def plot_final_graphs(time_data, x_data, y_data, save_path='final_comprehensive_plots.png'):
     """
     Plot all final comprehensive graphs after the session ends.
     """
@@ -127,15 +127,3 @@ def plot_final_graphs(time_data, x_data, y_data, heatmap_data, save_path='final_
 
     plt.tight_layout()
     plt.savefig(save_path)  # Save all plots as a single image
-    # plt.show()
-
-    # # Plot Final Heatmap in a Separate Figure
-    # plt.figure(figsize=(10, 6))
-    # plt.imshow(heatmap_data, cmap='hot', interpolation='nearest', origin='upper')
-    # plt.colorbar(label='Gaze Duration')
-    # plt.title('Final Gaze Heatmap')
-    # plt.xlabel('Horizontal Coordinate')
-    # plt.ylabel('Vertical Coordinate')
-    # plt.gca().invert_yaxis()
-    # plt.savefig('final_gaze_heatmap.png')  # Save heatmap separately
-    # plt.show()
