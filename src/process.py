@@ -41,13 +41,19 @@ def process_frame(frame, x_data, y_data, apply_affine):
             right = face_landmarks.landmark[473]
             right_x_lft = face_landmarks.landmark[36]
             right_x_rgt = face_landmarks.landmark[263]
+
+            nose = face_landmarks.landmark[4]
             
             
             # Get iris coordinates
-            left_iris_x = distance(left, left_x_rgt) / distance(left_x_lft, left_x_rgt)
-            left_iris_y = distance(left, left_y_bot) / distance(left_y_top, left_y_bot)
-            right_iris_x = distance(right, right_x_lft) / distance(right_x_lft, right_x_rgt)
-            right_iris_y = distance(left, left_y_bot) / distance(right_y_top, right_y_bot)
+            left_iris_x = left.x - left_x_rgt.x
+            left_iris_y = left.y - nose.y
+            right_iris_x = right.x - right_x_lft.x
+            right_iris_y = right.y - nose.y
+            # left_iris_x = distance(left, left_x_rgt) 
+            # left_iris_y = distance(left, left_y_bot) 
+            # right_iris_x = distance(right, right_x_lft) 
+            # right_iris_y = distance(left, left_y_bot) 
 
             # Average iris coordinates
             avg_x = (left_iris_x + right_iris_x) / 2
