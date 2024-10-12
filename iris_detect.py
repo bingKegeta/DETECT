@@ -83,11 +83,46 @@ def image_mode(image_path):
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
+def video_mode(video_path):
+    """Process a video file or camera stream frame by frame and display the result."""
+    # Open the video file or camera stream
+    capture = cv2.VideoCapture(video_path)
+    
+    # Check if the video opened successfully
+    if not capture.isOpened():
+        print(f"Error: Could not open video at {video_path}")
+        sys.exit(1)
+    
+    # Loop to read and process frames until the video ends or interrupted
+    while True:
+        # Read a frame from the video
+        ret, frame = capture.read()
+        
+        # If the frame could not be read, we have reached the end of the video
+        if not ret:
+            print("End of video or cannot fetch the frame.")
+            break
+        
+        # Process the current frame
+        processed_frame = process_frame(frame)
+        
+        # Display the processed frame
+        cv2.imshow('MediaPipe FaceMesh with Iris Tracking', processed_frame)
+        
+        # Wait for 1 ms and check if the user wants to quit by pressing 'q'
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    
+    # Release video capture and close all OpenCV windows
+    capture.release()
+    cv2.destroyAllWindows()
+
 if __name__ == "__main__":
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Track face and iris using MediaPipe.")
     parser.add_argument('--webcam', action='store_true', help='Use webcam for face tracking')
     parser.add_argument('--image', type=str, help='Path to the image file')
+    parser.add_argument('--video', type=str, help='Path to video file')
 
     args = parser.parse_args()
 
@@ -99,6 +134,8 @@ if __name__ == "__main__":
         webcam_mode()
     elif args.image:
         image_mode(args.image)
+    elif args.video:
+        video_mode(args.video)
     else:
         print("Error: You must provide either --webcam or --image <path>")
         sys.exit(1)
