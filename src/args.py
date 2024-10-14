@@ -58,6 +58,10 @@ def load_config(json_file_path):
     if config['source'] != 'webcam' and not config['path']:
         raise ValueError("The 'path' field is required when 'source' is not 'webcam'.")
     
+    # If dot display is not given
+    if 'dot_display' not in config:
+        raise ValueError("The \"dot_display\" parameter (boolean) is not given")
+    
     # Handle 'export' sub-requirements
     if 'export' in config:
         export_options = config['export']
