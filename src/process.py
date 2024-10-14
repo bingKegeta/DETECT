@@ -16,13 +16,14 @@ def distance(landmark1, landmark2):
         (landmark2.z - landmark1.z)**2
     )
 
-def process_frame(frame, x_data, y_data, apply_affine):
+def process_frame(frame, x_data, y_data, apply_affine, display):
     img_h, img_w, _ = frame.shape
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = face_mesh.process(rgb_frame)
     
     if results.multi_face_landmarks:
         for face_landmarks in results.multi_face_landmarks:
+            #! Remove this next update
             # Optionally apply affine transform
             if apply_affine:
                 affine_matrix = get_affine_transform(face_landmarks.landmark, img_w, img_h)
@@ -64,8 +65,9 @@ def process_frame(frame, x_data, y_data, apply_affine):
             y_data.append(avg_y)
 
             # Visual confirmation: draw tracked iris on the frame
-            cv2.circle(frame, (int(left.x * img_w), int(left.y * img_h)), 2, (0, 255, 0), -1)
-            cv2.circle(frame, (int(right.x * img_w), int(right.y * img_h)), 2, (0, 255, 0), -1)
+            if display:
+                cv2.circle(frame, (int(left.x * img_w), int(left.y * img_h)), 2, (0, 255, 0), -1)
+                cv2.circle(frame, (int(right.x * img_w), int(right.y * img_h)), 2, (0, 255, 0), -1)
 
         return frame, True
 

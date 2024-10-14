@@ -128,7 +128,7 @@ def main():
             current_time = frame_count / fps  # For video files: Use FPS-based timestamp
 
         # Process the frame and update gaze data
-        stabilized_frame, iris_detected = process_frame(frame, x_data, y_data, config['affine'])
+        stabilized_frame, iris_detected = process_frame(frame, x_data, y_data, config['affine'], config['dot_display'])
 
         # If gaze points were detected, update time and plot
         if iris_detected:
