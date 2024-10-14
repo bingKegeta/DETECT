@@ -28,6 +28,7 @@ The following features are currently available (almost all are experimental :P):
 |-------|-----------|
 |```affine```|Use the Face normalization algorithm for possible improvement in precision|
 |```graph```|Graph the x-time and y-time plots to see the changes in real time|
+|```dot_display```|Show the iris/pupil as tracked by mediapipe (might reduce load)|
 |```export::csv```|Export the tracked eye data into a csv file for advanced analysis|
 |```csv_interval [sec]```|🚨 **[Doesn't work]** Sets the time interval between each collected data point for the csv|
 |```export::graph```|Export the tracked eye data and graph it for easier comprehension and basic analysis|
