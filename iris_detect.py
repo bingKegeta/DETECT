@@ -11,7 +11,7 @@ mp_drawing_styles = mp.solutions.drawing_styles
 # Landmark indices for left and right irises
 LEFT_IRIS = [474, 475, 476, 477]
 RIGHT_IRIS = [469, 470, 471, 472]
-PUPILS = [468, 473]
+PUPILS = [468, 473]  # Right pupil (468), Left pupil (473)
 
 def process_frame(frame):
     """Process a frame (from webcam or image) to detect face and iris, then display the result."""
@@ -20,6 +20,10 @@ def process_frame(frame):
     
     # Process the frame using the FaceMesh model
     results = face_mesh.process(frame_rgb)
+
+    # Variables to store pupil coordinates for display in the corners
+    left_pupil_coords = (0, 0)
+    right_pupil_coords = (0, 0)
 
     # If face landmarks are detected
     if results.multi_face_landmarks:
@@ -32,23 +36,21 @@ def process_frame(frame):
                 landmark_drawing_spec=None,
                 connection_drawing_spec=mp_drawing_styles.get_default_face_mesh_contours_style())
 
-            # Draw bounding box around the face
-            x_min, y_min = w, h
-            x_max, y_max = 0, 0
-            for landmark in face_landmarks.landmark:
-                x, y = int(landmark.x * w), int(landmark.y * h)
-                x_min = min(x_min, x)
-                y_min = min(y_min, y)
-                x_max = max(x_max, x)
-                y_max = max(y_max, y)
-            cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-
-            # Highlight the irises
-            for iris_landmark in LEFT_IRIS + RIGHT_IRIS + PUPILS:
-                landmark = face_landmarks.landmark[iris_landmark]
+            # Get the coordinates of the pupils (landmarks 468 and 473)
+            for idx, pupil_landmark in enumerate(PUPILS):
+                landmark = face_landmarks.landmark[pupil_landmark]
                 x = int(landmark.x * w)
                 y = int(landmark.y * h)
-                cv2.circle(frame, (x, y), 2, (0, 0, 255), -1)
+
+                # Save the pupil coordinates for the left and right eyes
+                if idx == 0:  # Right pupil
+                    right_pupil_coords = (x, y)
+                elif idx == 1:  # Left pupil
+                    left_pupil_coords = (x, y)
+
+    # Display the gaze coordinates in the corners
+    cv2.putText(frame, f"Right Gaze: {right_pupil_coords}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+    cv2.putText(frame, f"Left Gaze: {left_pupil_coords}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
     
     return frame
 
@@ -63,7 +65,7 @@ def webcam_mode():
             continue
 
         processed_frame = process_frame(frame)
-        cv2.imshow('MediaPipe FaceMesh with Iris Tracking', processed_frame)
+        cv2.imshow('Gaze Tracking with MediaPipe', processed_frame)
 
         if cv2.waitKey(5) & 0xFF == ord('q'):
             break
@@ -79,7 +81,7 @@ def image_mode(image_path):
         sys.exit(1)
 
     processed_image = process_frame(image)
-    cv2.imshow('MediaPipe FaceMesh with Iris Tracking', processed_image)
+    cv2.imshow('Gaze Tracking with MediaPipe', processed_image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
@@ -107,7 +109,7 @@ def video_mode(video_path):
         processed_frame = process_frame(frame)
         
         # Display the processed frame
-        cv2.imshow('MediaPipe FaceMesh with Iris Tracking', processed_frame)
+        cv2.imshow('Gaze Tracking with MediaPipe', processed_frame)
         
         # Wait for 1 ms and check if the user wants to quit by pressing 'q'
         if cv2.waitKey(1) & 0xFF == ord('q'):
