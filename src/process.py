@@ -48,9 +48,9 @@ def process_frame(frame, x_data, y_data, apply_affine, display):
             
             # Get iris coordinates
             left_iris_x = left.x - left_x_rgt.x
-            left_iris_y = left.y - nose.y
+            left_iris_y = nose.y - left.y
             right_iris_x = right.x - right_x_lft.x
-            right_iris_y = right.y - nose.y
+            right_iris_y = nose.y - right.y
             # left_iris_x = distance(left, left_x_rgt) 
             # left_iris_y = distance(left, left_y_bot) 
             # right_iris_x = distance(right, right_x_lft) 
