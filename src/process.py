@@ -2,6 +2,7 @@ import math
 import cv2
 import numpy as np
 import mediapipe as mp
+from src.utils import HorizontalRegion, VerticalRegion
 
 # Initialize Mediapipe for face and iris detection
 mp_face_mesh = mp.solutions.face_mesh
@@ -16,7 +17,7 @@ def distance(landmark1, landmark2):
         (landmark2.z - landmark1.z)**2
     )
 
-def process_frame(frame, x_data, y_data, apply_affine, display):
+def process_frame(frame, x_data, y_data, apply_affine, display, categorize):
     img_h, img_w, _ = frame.shape
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = face_mesh.process(rgb_frame)
@@ -68,6 +69,10 @@ def process_frame(frame, x_data, y_data, apply_affine, display):
             if display:
                 cv2.circle(frame, (int(left.x * img_w), int(left.y * img_h)), 2, (0, 255, 0), -1)
                 cv2.circle(frame, (int(right.x * img_w), int(right.y * img_h)), 2, (0, 255, 0), -1)
+                
+                if categorize:
+                    region: str = f"Gaze Direction: {HorizontalRegion(avg_x)}-{VerticalRegion(avg_y)}"
+                    cv2.putText(frame, region, (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
 
         return frame, True
 
