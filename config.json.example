@@ -10,4 +10,6 @@
         "animation": true
     },
     "export_dir": "output/"
+    "dot_display": true,
+    "categorize": true
 }
