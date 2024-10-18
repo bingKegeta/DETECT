@@ -53,6 +53,7 @@ def load_config(json_file_path):
     config.setdefault('graph', True)
     config.setdefault('affine', False)
     config.setdefault('csv_interval', 1.0)
+    config.setdefault('categorize', False)
     
     # If source is not 'webcam', 'path' is required
     if config['source'] != 'webcam' and not config['path']:
