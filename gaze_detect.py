@@ -185,6 +185,16 @@ def main():
             return
 
         cap = cv2.VideoCapture(args.path)
+
+        # Get the width and height of the frames
+        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        # Get the FPS of the input video
+        fps = cap.get(cv2.CAP_PROP_FPS)  
+
+        # Define the codec and create VideoWriter object (filename, codec, fps, frame size)
+        out = cv2.VideoWriter('output_processed_video.mp4', cv2.VideoWriter_fourcc(*'mp4v'), fps, (frame_width, frame_height))
+
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
@@ -192,6 +202,9 @@ def main():
 
             frame = process_frame(frame)
             cv2.imshow('Eye Tracking', frame)
+
+            # Write the processed frame to the output video file
+            out.write(frame)
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
