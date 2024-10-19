@@ -17,6 +17,7 @@ def distance(landmark1, landmark2):
         (landmark2.z - landmark1.z)**2
     )
 
+# Process the frame for face and iris detection
 def process_frame(frame, x_data, y_data, apply_affine, display, categorize):
     img_h, img_w, _ = frame.shape
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
