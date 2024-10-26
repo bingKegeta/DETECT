@@ -7,6 +7,7 @@ from src.process import process_frame
 from src.animation import create_gaze_animation
 from src.graph import plot_gaze_tracking, plot_final_graphs
 from src.export import export_csv
+from src.calibration import run_calibration
 import numpy as np
 import sys
 import os
@@ -50,7 +51,7 @@ def main():
     if not cap.isOpened():
         print("Error: Unable to open video source. Check the camera index or file path.")
         return
-
+    
     # Get video properties
     ret, frame = cap.read()
     if not ret:
@@ -60,13 +61,40 @@ def main():
 
     height, width = frame.shape[:2]
 
+    # Define Calibration Points
+    calibration_points = [
+        (int(width // 2), int(height // 2), 'Center')
+    ]
+
+    # Perform Calibration
+    print("Starting calibration...")
+    calibration_data = run_calibration(cap, calibration_points, duration=5)
+
+    if not calibration_data:
+        print("Calibration failed. Exiting.")
+        cap.release()
+        return
+    
+    print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+
     # Reinitialize video capture to start from the first frame
     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    
+    # Validate calibration data
+    required_labels = ['Center', 'Left', 'Right', 'Up', 'Down']
+    for label in required_labels:
+        if label not in calibration_data:
+            print(f"Missing calibration data for '{label}'. Calibration failed.")
+            cap.release()
+            return
+
+    print("Calibration successful.")
 
     # Initialize data arrays to store gaze coordinates over time
     x_data = []
     y_data = []
     time_data = []
+    head_pose_data = []  # To store head pose info
 
     # Set up real-time graphing if required
     if config['graph']:
@@ -128,10 +156,13 @@ def main():
             current_time = frame_count / fps  # For video files: Use FPS-based timestamp
 
         # Process the frame and update gaze data
-        stabilized_frame, iris_detected = process_frame(frame, x_data, y_data, config['affine'])
+        stabilized_frame, eye_open, head_pose = process_frame(frame, x_data, y_data, config['affine'], calibration_data)
 
-        # If gaze points were detected, update time and plot
-        if iris_detected:
+        # Store head pose data
+        head_pose_data.append(head_pose)
+
+        # If gaze points were detected and eyes are open, update time and plot
+        if eye_open:
             time_data.append(current_time)
 
             if config['graph']:
