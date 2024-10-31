@@ -1,103 +1,92 @@
 # src/animation.py
 
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-import numpy as np
+from PyQt5 import QtWidgets, QtGui, QtCore
+import os
+import sys
+
+class GazeAnimation(QtWidgets.QGraphicsView):
+    def __init__(self, eye_positions, frame_width, frame_height, fps=30, save_dir='frames'):
+        super().__init__()
+        self.eye_positions = eye_positions
+        self.fps = fps
+        self.current_frame = 0
+        self.frame_width = frame_width
+        self.frame_height = frame_height
+        self.save_dir = save_dir
+
+        # Create directory for frames if it doesn't exist
+        os.makedirs(save_dir, exist_ok=True)
+
+        # Set up the scene
+        self.scene = QtWidgets.QGraphicsScene()
+        self.setScene(self.scene)
+        self.setFixedSize(frame_width, frame_height)
+
+        # Calculate padding and eye dimensions
+        x_values = [x for x, y in eye_positions if x is not None]
+        y_values = [y for x, y in eye_positions if y is not None]
+        
+        min_x, max_x = min(x_values), max(x_values)
+        min_y, max_y = min(y_values), max(y_values)
+        padding_x = (max_x - min_x) * 0.1 if (max_x - min_x) != 0 else 1
+        padding_y = (max_y - min_y) * 0.1 if (max_y - min_y) != 0 else 1
+
+        ax_min_x, ax_max_x = min_x - padding_x, max_x + padding_x
+        ax_min_y, ax_max_y = min_y - padding_y, max_y + padding_y
+        self.setSceneRect(ax_min_x, ax_min_y, ax_max_x - ax_min_x, ax_max_y - ax_min_y)
+
+        # Artificial eye setup
+        center_x = (ax_min_x + ax_max_x) / 2
+        center_y = (ax_min_y + ax_max_y) / 2
+        radius = max((ax_max_x - ax_min_x), (ax_max_y - ax_min_y)) / 2 + max(padding_x, padding_y)
+        
+        # Draw the artificial eye
+        self.eye = self.scene.addEllipse(
+            center_x - radius, center_y - radius, 2 * radius, 2 * radius,
+            pen=QtGui.QPen(QtCore.Qt.black, 2),
+            brush=QtGui.QBrush(QtCore.Qt.white)
+        )
+
+        # Gaze point setup
+        self.gaze_point = QtWidgets.QGraphicsEllipseItem(-7.5, -7.5, 15, 15)
+        self.gaze_point.setBrush(QtGui.QBrush(QtCore.Qt.blue))
+        self.scene.addItem(self.gaze_point)
+        
+        # Timer for animation
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.update_frame)
+        self.timer.start(1000 / fps)
+
+    def update_frame(self):
+        if self.current_frame < len(self.eye_positions):
+            x, y = self.eye_positions[self.current_frame]
+            if x is not None and y is not None:
+                self.gaze_point.setPos(x, y)
+            else:
+                self.gaze_point.setPos(self.scene.sceneRect().center())
+            
+            # Capture and save the current frame as an image
+            self.capture_frame()
+
+            self.current_frame += 1
+        else:
+            self.timer.stop()
+
+    def capture_frame(self):
+        # Capture the frame from the QGraphicsView
+        image = self.grab()
+        frame_path = os.path.join(self.save_dir, f'frame_{self.current_frame:04d}.png')
+        image.save(frame_path, 'PNG')
+
 
 def create_gaze_animation(eye_positions, frame_width, frame_height, fps=30, save_path='animation.mp4'):
-    """
-    Creates and saves a gaze animation based on eye_positions.
+    app = QtWidgets.QApplication(sys.argv)
+    animation_view = GazeAnimation(eye_positions, frame_width, frame_height, fps)
+    animation_view.show()
 
-    Args:
-        eye_positions (list of tuples): List containing (x, y) gaze coordinates.
-        frame_width (int): Width of the video frame.
-        frame_height (int): Height of the video frame.
-        fps (int): Frames per second for the animation.
-    """
-    if not eye_positions:
-        print("No gaze data available to create animation.")
-        return
+    app.exec_()
 
-    # Extract x and y coordinates
-    x_values = [x for x, y in eye_positions]
-    y_values = [y for x, y in eye_positions]
-
-    # Compute min and max for x and y
-    min_x = min(x_values)
-    max_x = max(x_values)
-    min_y = min(y_values)
-    max_y = max(y_values)
-
-    # Calculate ranges
-    range_x = max_x - min_x
-    range_y = max_y - min_y
-
-    # Add padding (10% of the range)
-    padding_x = 0.1 * range_x if range_x != 0 else 1
-    padding_y = 0.1 * range_y if range_y != 0 else 1
-
-    # Set plot limits with padding
-    ax_min_x = min_x - padding_x
-    ax_max_x = max_x + padding_x
-    ax_min_y = min_y - padding_y
-    ax_max_y = max_y + padding_y
-
-    # Compute center of the gaze data
-    center_x = (ax_min_x + ax_max_x) / 2
-    center_y = (ax_min_y + ax_max_y) / 2
-
-    # Determine the radius for the artificial eye
-    radius = max(range_x, range_y) / 2 + max(padding_x, padding_y)
-
-    # Initialize the plot
-    fig, ax = plt.subplots(figsize=(6, 6))
-    ax.set_xlim(ax_min_x, ax_max_x)
-    ax.set_ylim(ax_min_y, ax_max_y)
-    ax.set_xlabel('Horizontal Gaze')
-    ax.set_ylabel('Vertical Gaze')
-    ax.set_title('Gaze Animation')
-    ax.set_aspect('equal', adjustable='box')
-    ax.grid(True)
-
-    # Draw the artificial eye centered at (center_x, center_y)
-    eye = plt.Circle((center_x, center_y), radius, edgecolor='black', facecolor='white', linewidth=2)
-    ax.add_patch(eye)
-
-    # Initialize the gaze point
-    point, = ax.plot([], [], 'o', color='blue', markersize=15)
-
-    def init():
-        point.set_data([], [])
-        return point,
-
-    def animate_frame(i):
-        if i < len(eye_positions):
-            x, y = eye_positions[i]
-            if x is not None and y is not None:
-                # Directly set the gaze point without additional normalization
-                point.set_data([x], [y])
-            else:
-                # If gaze is not detected, center the gaze point
-                point.set_data([center_x], [center_y])
-        return point,
-
-    ani = animation.FuncAnimation(
-        fig,
-        animate_frame,
-        init_func=init,
-        frames=len(eye_positions),
-        interval=1000 / fps,  # interval in milliseconds
-        blit=True,
-        repeat=False
-    )
-
-    try:
-        # Save the animation as a video file
-        ani.save(save_path, writer='ffmpeg', fps=fps)
-        print("Gaze animation saved as 'animation.mp4'")
-    except FileNotFoundError:
-        print("Error: ffmpeg is not installed or not found in PATH.")
-    except Exception as e:
-        print(f"Failed to save animation: {e}")
-
-    plt.close(fig)
+    # Instructions to compile the frames into a video using ffmpeg or similar tool
+    print("\nFrames have been saved in the 'frames' directory.")
+    print("To compile them into a video, you can use the following command in your terminal:")
+    print(f"ffmpeg -r {fps} -i frames/frame_%04d.png -vcodec libx264 -y {save_path}")

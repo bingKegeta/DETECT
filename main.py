@@ -1,15 +1,14 @@
-from turtle import st
 import cv2
 import time
-import matplotlib.pyplot as plt
+import numpy as np
+import sys
+import os
+import pyqtgraph as pg
 from src.args import load_config
 from src.process import process_frame
 from src.animation import create_gaze_animation
 from src.graph import plot_gaze_tracking, plot_final_graphs
 from src.export import export_csv
-import numpy as np
-import sys
-import os
 
 def main():
     # Ensure that the JSON file path is provided as a command-line argument
@@ -32,7 +31,7 @@ def main():
     # Initialize video capture based on the configuration
     if config['source'] == 'webcam':
         cap = cv2.VideoCapture(0)
-        start_time = time.time() # Start time for FPS calculation
+        start_time = time.time()  # Start time for FPS calculation
     elif config['source'] in ['image', 'video']:
         if not config['path']:
             print("Error: 'path' field is required in the configuration when 'source' is 'image' or 'video'.")
@@ -68,43 +67,40 @@ def main():
     y_data = []
     time_data = []
 
+    # Initialize PyQt Application
+    app = pg.mkQApp("Gaze Tracking")  # Create the PyQt application
+    pg.setConfigOptions(antialias=True)
+
     # Set up real-time graphing if required
     if config['graph']:
-        plt.ion()
-
-        # Create a figure with 4 subplots: 2 line plots, 1 2D scatter, and 1 3D scatter
-        fig = plt.figure(figsize=(15, 10))
+        win = pg.GraphicsLayoutWidget(show=True, title="Gaze Tracking")
+        win.resize(800, 600)
 
         # Line Plot for X Coordinate
-        ax_x = fig.add_subplot(2, 2, 1)
-        ax_x.set_title('X Coordinate Over Time')
-        ax_x.set_xlabel('Time (s)')
-        ax_x.set_ylabel('X Coordinate')
-        ax_x.legend(['X Coordinate (Left-Right)'])
-        ax_x.grid(True)
+        ax_x = win.addPlot(title='X Coordinate Over Time')
+        ax_x.setLabel('left', 'X Coordinate')
+        ax_x.setLabel('bottom', 'Time (s)')
+        x_curve = ax_x.plot(pen='r')
 
         # Line Plot for Y Coordinate
-        ax_y = fig.add_subplot(2, 2, 2)
-        ax_y.set_title('Y Coordinate Over Time')
-        ax_y.set_xlabel('Time (s)')
-        ax_y.set_ylabel('Y Coordinate')
-        ax_y.legend(['Y Coordinate (Up-Down)'])
-        ax_y.grid(True)
+        ax_y = win.addPlot(title='Y Coordinate Over Time', row=1, col=0)
+        ax_y.setLabel('left', 'Y Coordinate')
+        ax_y.setLabel('bottom', 'Time (s)')
+        y_curve = ax_y.plot(pen='b')
 
         # 2D Scatter Plot
-        scatter_ax = fig.add_subplot(2, 2, 3)
-        scatter_ax.set_title('2D Gaze Points Over Time')
-        scatter_ax.set_xlabel('Horizontal Coordinate')
-        scatter_ax.set_ylabel('Vertical Coordinate')
-        scatter_ax.invert_yaxis()
+        scatter_ax = win.addPlot(title='2D Gaze Points Over Time', row=2, col=0)
+        scatter = pg.ScatterPlotItem(pen='g')
+        scatter_ax.addItem(scatter)
 
-        # 3D Scatter Plot
-        scatter3d_ax = fig.add_subplot(2, 2, 4, projection='3d')
-        scatter3d_ax.set_title('3D Gaze Points')
-        scatter3d_ax.set_xlabel('Horizontal Coordinate')
-        scatter3d_ax.set_ylabel('Vertical Coordinate')
-        scatter3d_ax.set_zlabel('Time (s)')
-        scatter3d_ax.invert_yaxis()
+        # Create a separate window for the 3D scatter plot
+        scatter3d_win = pg.GraphicsLayoutWidget(show=True, title="3D Gaze Points")
+        scatter3d_ax = scatter3d_win.addPlot(title='3D Gaze Points')
+        scatter3d_ax.setLabel('left', 'Vertical Coordinate')
+        scatter3d_ax.setLabel('bottom', 'Horizontal Coordinate')
+        scatter3d_ax.setLabel('right', 'Time (s)')
+        scatter3d = pg.ScatterPlotItem(size=5, pen='y')  # Create a scatter plot item for 3D
+        scatter3d_ax.addItem(scatter3d)
 
     last_csv_time = 0  # For controlling CSV export interval
 
@@ -135,7 +131,15 @@ def main():
             time_data.append(current_time)
 
             if config['graph']:
-                plot_gaze_tracking(time_data, x_data, y_data, ax_x, ax_y, scatter_ax, scatter3d_ax)
+                # Update plots
+                x_curve.setData(time_data, x_data)
+                y_curve.setData(time_data, y_data)
+
+                # Update 2D scatter plot
+                scatter.setData(x_data, y_data)
+
+                # Update 3D scatter plot
+                scatter3d.setData(x_data, y_data, pen='y')  # This is still incorrect for 3D
 
             # Export data to CSV at specified interval, if enabled
             if config['export']['csv'] and current_time - last_csv_time >= config['csv_interval']:
@@ -169,7 +173,6 @@ def main():
     # Create the graph image if graph export is enabled
     if config['export']['graph']:
         plot_final_graphs(time_data, x_data, y_data, save_path=config['graph_out'])
-    
 
 if __name__ == "__main__":
     main()
