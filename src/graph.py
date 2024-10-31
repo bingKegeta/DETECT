@@ -1,129 +1,77 @@
 # src/graph.py
 
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from scipy.signal import savgol_filter
+from PyQt5 import QtWidgets, QtCore, QtGui
+import pyqtgraph as pg
 import numpy as np
+from scipy.signal import savgol_filter
 
 WINDOW_LENGTH = 13
 POLYORDER = 2
 
-def plot_gaze_tracking(time_data, x_data, y_data, ax_x, ax_y, scatter_ax, scatter3d_ax):
-    """
-    Update real-time plots with the latest gaze data.
-    """
-    if len(x_data) == 0 or len(y_data) == 0 or len(time_data) == 0:
-        return  # Skip plotting if there's no valid data
+class GazeTrackingPlotter(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Real-Time Gaze Tracking")
+        self.layout = QtWidgets.QVBoxLayout()
+        self.setLayout(self.layout)
 
-    # Apply smoothing
-    x_data_smoothed = savgol_filter(x_data, WINDOW_LENGTH, POLYORDER) if len(x_data) >= WINDOW_LENGTH else x_data
-    y_data_smoothed = savgol_filter(y_data, WINDOW_LENGTH, POLYORDER) if len(y_data) >= WINDOW_LENGTH else y_data
+        # X and Y Line Plots
+        self.plot_widget_x = pg.PlotWidget(title="X Coordinate Over Time")
+        self.plot_widget_y = pg.PlotWidget(title="Y Coordinate Over Time")
+        self.layout.addWidget(self.plot_widget_x)
+        self.layout.addWidget(self.plot_widget_y)
 
-    # Update Line Graphs
-    ax_x.clear()
-    ax_x.plot(time_data, x_data_smoothed, label="X Coordinate (Left-Right)", color='r')
-    ax_x.set_xlabel('Time (s)')
-    ax_x.set_ylabel('X Coordinate')
-    ax_x.set_title('X Coordinate Over Time')
-    ax_x.legend()
-    ax_x.grid(True)
+        # 2D Scatter Plot
+        self.plot_widget_2d = pg.PlotWidget(title="2D Gaze Points Over Time")
+        self.layout.addWidget(self.plot_widget_2d)
 
-    ax_y.clear()
-    ax_y.plot(time_data, y_data_smoothed, label="Y Coordinate (Up-Down)", color='b')
-    ax_y.set_xlabel('Time (s)')
-    ax_y.set_ylabel('Y Coordinate')
-    ax_y.set_title('Y Coordinate Over Time')
-    ax_y.legend()
-    ax_y.grid(True)
+        # 3D Scatter Plot (using pyqtgraph's GLViewWidget)
+        self.plot_widget_3d = pg.opengl.GLViewWidget()
+        self.scatter_3d = pg.opengl.GLScatterPlotItem()
+        self.plot_widget_3d.addItem(self.scatter_3d)
+        self.layout.addWidget(self.plot_widget_3d)
 
-    # Update 2D Scatter Plot
-    scatter_ax.clear()
-    scatter = scatter_ax.scatter(x_data, y_data, c=time_data, cmap='viridis', s=5)
-    scatter_ax.set_title('2D Gaze Points Over Time')
-    scatter_ax.set_xlabel('Horizontal Coordinate')
-    scatter_ax.set_ylabel('Vertical Coordinate')
-    scatter_ax.invert_yaxis()
-    scatter_ax.legend(['Gaze Points'])
+    def update_plots(self, time_data, x_data, y_data):
+        # Apply smoothing
+        x_data_smoothed = savgol_filter(x_data, WINDOW_LENGTH, POLYORDER) if len(x_data) >= WINDOW_LENGTH else x_data
+        y_data_smoothed = savgol_filter(y_data, WINDOW_LENGTH, POLYORDER) if len(y_data) >= WINDOW_LENGTH else y_data
 
-    # Manage colorbar: Add only once
-    if not hasattr(plot_gaze_tracking, "cbar_scatter"):
-        plot_gaze_tracking.cbar_scatter = scatter_ax.figure.colorbar(scatter, ax=scatter_ax, label='Time (s)')
-    else:
-        # Update color limits and colorbar
-        scatter.set_clim(vmin=min(time_data), vmax=max(time_data))
-        plot_gaze_tracking.cbar_scatter.update_normal(scatter)
+        # Update Line Plots
+        self.plot_widget_x.clear()
+        self.plot_widget_y.clear()
+        self.plot_widget_x.plot(time_data, x_data_smoothed, pen='r')
+        self.plot_widget_y.plot(time_data, y_data_smoothed, pen='b')
 
-    # Update 3D Scatter Plot
-    scatter3d_ax.clear()
-    scatter3d = scatter3d_ax.scatter(x_data, y_data, time_data, c=time_data, cmap='viridis', s=5)
-    scatter3d_ax.set_title('3D Gaze Points')
-    scatter3d_ax.set_xlabel('Horizontal Coordinate')
-    scatter3d_ax.set_ylabel('Vertical Coordinate')
-    scatter3d_ax.set_zlabel('Time (s)')
-    scatter3d_ax.invert_yaxis()
-    scatter3d_ax.legend(['Gaze Points'])
+        # Update 2D Scatter Plot
+        self.plot_widget_2d.clear()
+        scatter_2d = pg.ScatterPlotItem(x=x_data, y=y_data, pen=None, brush=pg.intColor(200, 255))
+        self.plot_widget_2d.addItem(scatter_2d)
 
-    # Manage colorbar: Add only once
-    if not hasattr(plot_gaze_tracking, "cbar_scatter3d"):
-        plot_gaze_tracking.cbar_scatter3d = scatter3d_ax.figure.colorbar(scatter3d, ax=scatter3d_ax, label='Time (s)')
-    else:
-        # Update color limits and colorbar
-        scatter3d.set_clim(vmin=min(time_data), vmax=max(time_data))
-        plot_gaze_tracking.cbar_scatter3d.update_normal(scatter3d)
+        # Update 3D Scatter Plot
+        colors = np.array([[1, 0, 0, 1]] * len(time_data))  # Red points
+        pos = np.column_stack((x_data, y_data, time_data))
+        self.scatter_3d.setData(pos=pos, color=colors, size=5)
 
-    plt.pause(0.001)  # Minimal pause for responsiveness
+
+def plot_gaze_tracking(time_data, x_data, y_data, ax_x=None, ax_y=None, scatter_ax=None, scatter3d_ax=None):
+    app = QtWidgets.QApplication([])
+    plotter = GazeTrackingPlotter()
+    plotter.update_plots(time_data, x_data, y_data)
+    plotter.show()
+    app.exec_()
+
 
 def plot_final_graphs(time_data, x_data, y_data, save_path='final_comprehensive_plots.png'):
-    """
-    Plot all final comprehensive graphs after the session ends.
-    """
-    plt.ioff()  # Turn off interactive mode
+    app = QtWidgets.QApplication([])
 
-    # Apply smoothing for the final plots
-    x_data_smoothed = savgol_filter(x_data, WINDOW_LENGTH, POLYORDER) if len(x_data) >= WINDOW_LENGTH else x_data
-    y_data_smoothed = savgol_filter(y_data, WINDOW_LENGTH, POLYORDER) if len(y_data) >= WINDOW_LENGTH else y_data
+    # Create main widget to store final plots
+    final_plotter = GazeTrackingPlotter()
+    final_plotter.update_plots(time_data, x_data, y_data)
 
-    # Create a new figure for final plots
-    fig = plt.figure(figsize=(20, 15))
+    # Capture and save the widget as an image
+    screenshot = final_plotter.grab()
+    screenshot.save(save_path, 'PNG')
 
-    # 1. Line Plot for X Coordinate
-    ax1 = fig.add_subplot(2, 2, 1)
-    ax1.plot(time_data, x_data_smoothed, label="X Coordinate (Left-Right)", color='r')
-    ax1.set_xlabel('Time (s)')
-    ax1.set_ylabel('X Coordinate')
-    ax1.set_title('Final X Coordinate Over Time')
-    ax1.legend()
-    ax1.grid(True)
-
-    # 2. Line Plot for Y Coordinate
-    ax2 = fig.add_subplot(2, 2, 2)
-    ax2.plot(time_data, y_data_smoothed, label="Y Coordinate (Up-Down)", color='b')
-    ax2.set_xlabel('Time (s)')
-    ax2.set_ylabel('Y Coordinate')
-    ax2.set_title('Final Y Coordinate Over Time')
-    ax2.legend()
-    ax2.grid(True)
-
-    # 3. 2D Scatter Plot
-    ax3 = fig.add_subplot(2, 2, 3)
-    scatter = ax3.scatter(x_data, y_data, c=time_data, cmap='viridis', s=5)
-    ax3.set_title('Final 2D Gaze Points')
-    ax3.set_xlabel('Horizontal Coordinate')
-    ax3.set_ylabel('Vertical Coordinate')
-    ax3.invert_yaxis()
-    ax3.legend(['Gaze Points'])
-    cbar = fig.colorbar(scatter, ax=ax3, label='Time (s)')
-
-    # 4. 3D Scatter Plot
-    ax4 = fig.add_subplot(2, 2, 4, projection='3d')
-    scatter3d = ax4.scatter(x_data, y_data, time_data, c=time_data, cmap='viridis', s=5)
-    ax4.set_title('Final 3D Gaze Points')
-    ax4.set_xlabel('Horizontal Coordinate')
-    ax4.set_ylabel('Vertical Coordinate')
-    ax4.set_zlabel('Time (s)')
-    ax4.invert_yaxis()
-    ax4.legend(['Gaze Points'])
-    cbar3d = fig.colorbar(scatter3d, ax=ax4, label='Time (s)')
-
-    plt.tight_layout()
-    plt.savefig(save_path)  # Save all plots as a single image
+    print(f"Final comprehensive plots saved as {save_path}.")
+    final_plotter.show()
+    app.exec_()
