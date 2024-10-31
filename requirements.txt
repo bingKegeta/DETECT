@@ -1,3 +1,5 @@
 numpy
 mediapipe
 opencv-python
+pyqt
+pyqtgraph
