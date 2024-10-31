@@ -19,7 +19,7 @@ class WebcamWindow(QWidget):
     """Window to display webcam feed."""
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Webcam Feed")
+        self.setWindowTitle("Webcam")
         self.video_label = QLabel(self)
         self.video_label.setScaledContents(True)  # Allows the video feed to scale
         self.video_label.setFixedSize(640, 480)  # Set webcam display size
@@ -54,6 +54,7 @@ class GazeTrackingApp(QWidget):
     def initUI(self):
         # Main layout
         main_layout = QVBoxLayout(self)
+        self.setWindowTitle("Graphs")
 
         # Set up real-time graphing for gaze data
         self.win = pg.GraphicsLayoutWidget(show=True, title="Gaze Tracking")
