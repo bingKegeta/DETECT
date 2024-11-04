@@ -7,6 +7,13 @@ from src.utils import HorizontalRegion, VerticalRegion
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_landmarks=True)
 
+# Define MediaPipe landmark indices for iris centers and nose tip
+LEFT_IRIS_CENTER = 468
+LEFT_EYE_CORNER = 33
+RIGHT_EYE_CORNER = 263
+RIGHT_IRIS_CENTER = 473
+NOSE_TIP = 4
+
 # Process the frame for face and iris detection
 def process_frame(frame, x_data, y_data, apply_affine, display, categorize):
     img_h, img_w, _ = frame.shape
@@ -15,9 +22,9 @@ def process_frame(frame, x_data, y_data, apply_affine, display, categorize):
     
     if results.multi_face_landmarks:
         for face_landmarks in results.multi_face_landmarks:
-            #! Going to make this work only if required
-            # Align the face to a frontal pose
-            aligned_frame, transformed_landmarks = align_face(frame, face_landmarks, img_w, img_h)
+            # Align the face to a frontal pose if apply_affine is True
+            if apply_affine:
+                frame, face_landmarks = align_face(frame, face_landmarks, img_w, img_h)
             
             # Get normalized iris position
             avg_iris_x, avg_iris_y = get_normalized_iris_position(face_landmarks, img_w, img_h)
@@ -27,12 +34,7 @@ def process_frame(frame, x_data, y_data, apply_affine, display, categorize):
             y_data.append(avg_iris_y)
             
             # Visualization (Optional)
-            if display:
-                # Convert normalized coordinates back to pixel coordinates for visualization
-                iris_pixel_x = int(avg_iris_x * img_w)
-                iris_pixel_y = int(avg_iris_y * img_h)
-                cv2.circle(frame, (iris_pixel_x, iris_pixel_y), 5, (0, 255, 0), -1)
-                
+            if display:                
                 # Optionally, draw all landmarks for verification
                 for idx, lm in enumerate(face_landmarks.landmark):
                     x = int(lm.x * img_w)
@@ -47,64 +49,6 @@ def process_frame(frame, x_data, y_data, apply_affine, display, categorize):
             return frame, True
 
     return frame, False
-
-def extract_and_normalize_eye(frame, eye_landmarks):
-    # Compute the center and angle of the eye
-    left_corner = eye_landmarks[0]
-    right_corner = eye_landmarks[8]  # Adjust index based on landmarks
-    eye_center = np.mean(eye_landmarks, axis=0)
-    dx = right_corner[0] - left_corner[0]
-    dy = right_corner[1] - left_corner[1]
-    angle = np.degrees(np.arctan2(dy, dx))
-    
-    # Compute the affine transformation matrix
-    M = cv2.getRotationMatrix2D(tuple(eye_center), angle, 1.0)
-    
-    # Rotate the image to align the eye horizontally
-    img_h, img_w = frame.shape[:2]
-    rotated_frame = cv2.warpAffine(frame, M, (img_w, img_h))
-    
-    # Apply the same transformation to the eye landmarks
-    eye_landmarks_rotated = np.array([M @ [x, y, 1] for (x, y) in eye_landmarks])
-    
-    # Crop the eye region
-    x, y, w, h = cv2.boundingRect(eye_landmarks_rotated.astype(np.int32))
-    eye_img = rotated_frame[y:y+h, x:x+w]
-    
-    # Resize the eye image to a standard size
-    eye_img_resized = cv2.resize(eye_img, (60, 36))
-    
-    # Normalize the coordinates of the eye landmarks within the eye image
-    eye_landmarks_normalized = (eye_landmarks_rotated - [x, y]) / [w, h]
-    
-    return eye_img_resized, eye_landmarks_normalized
-
-def find_iris_position(eye_img):
-    # Convert to grayscale
-    gray_eye = cv2.cvtColor(eye_img, cv2.COLOR_BGR2GRAY)
-    
-    # Use thresholding to segment the iris
-    _, thresh_eye = cv2.threshold(gray_eye, 30, 255, cv2.THRESH_BINARY_INV)
-    
-    # Find contours
-    contours, _ = cv2.findContours(thresh_eye, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    if contours:
-        # Assume the largest contour is the iris
-        largest_contour = max(contours, key=cv2.contourArea)
-        # Compute the centroid of the iris
-        M = cv2.moments(largest_contour)
-        if M["m00"] != 0:
-            cx = M["m10"] / M["m00"] / eye_img.shape[1]
-            cy = M["m01"] / M["m00"] / eye_img.shape[0]
-            return (cx, cy)
-    # Fallback if iris is not detected
-    return (0.5, 0.5)
-
-# Define MediaPipe landmark indices for iris centers and nose tip
-LEFT_IRIS_CENTER = 468
-RIGHT_IRIS_CENTER = 473
-NOSE_TIP = 4
 
 def get_normalized_iris_position(face_landmarks, img_w, img_h):
     """
@@ -134,17 +78,17 @@ def get_normalized_iris_position(face_landmarks, img_w, img_h):
     
     # Compute relative position
     rel_x = iris_x - nose_x
-    rel_y = iris_y - nose_y
+    rel_y = nose_y - iris_y
     
     # Normalize relative to inter-ocular distance (distance between eyes)
-    left_eye = face_landmarks.landmark[LEFT_IRIS_CENTER]
-    right_eye = face_landmarks.landmark[RIGHT_IRIS_CENTER]
+    left_eye = face_landmarks.landmark[LEFT_EYE_CORNER]
+    right_eye = face_landmarks.landmark[RIGHT_EYE_CORNER]
     inter_ocular_distance = np.linalg.norm(
         np.array([left_eye.x, left_eye.y]) - np.array([right_eye.x, right_eye.y])
     )
     
     norm_x = rel_x / inter_ocular_distance
-    norm_y = (rel_y / inter_ocular_distance) + 0.75 # Manual adjustment to set consistent range
+    norm_y = (rel_y / inter_ocular_distance) # Manual adjustment to set consistent range
     
     return (norm_x, norm_y)
 
@@ -159,7 +103,7 @@ def align_face(frame, face_landmarks, img_w, img_h):
         img_h: Height of the image.
 
     Returns:
-        Aligned frame and transformed landmarks.
+        Aligned frame and updated face_landmarks.
     """
 
     # Extract eye centers
@@ -199,9 +143,12 @@ def align_face(frame, face_landmarks, img_w, img_h):
     aligned_frame = cv2.warpAffine(frame, M, (img_w, img_h))
 
     # Transform all landmarks
-    landmarks = np.array([[lm.x * img_w, lm.y * img_h] for lm in face_landmarks.landmark])
-    ones = np.ones((len(landmarks), 1))
-    landmarks_hom = np.hstack([landmarks, ones])
-    transformed_landmarks = M.dot(landmarks_hom.T).T
+    for i, landmark in enumerate(face_landmarks.landmark):
+        point = np.array([landmark.x * img_w, landmark.y * img_h, 1])
+        transformed_point = M.dot(point)
 
-    return aligned_frame, transformed_landmarks
+        # Update the landmark values
+        face_landmarks.landmark[i].x = transformed_point[0] / img_w
+        face_landmarks.landmark[i].y = transformed_point[1] / img_h
+
+    return aligned_frame, face_landmarks
