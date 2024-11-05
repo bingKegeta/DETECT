@@ -1,10 +1,9 @@
 > [!IMPORTANT]
-> **MIGRATION TO JSON COMPLETED!!!**
-> 
-> This version removes the cli arguments previously required to run various configs in favor of using a JSON config file. 
+> **THIS IS THE V3-MODEL ENHANCED VERSION THAT INCLUDES FASTER GRAPHING ALONG WITH OTHER IMPROVEMENTS!**
+> This version has the best version of the eye tracking technology integrated with the fastest graphing module. All exports (graph png, csv and mp4) work well.
 
 > [!NOTE]
-> It is now possible to export the raw coordinates of the eyes as a csv file, a png with 4 graphs showing more insight into the gathered data and a nifty mp4 animation showcasing an estimated simulation of the gaze through the gathered data!
+> To create an environment capable to running this on your local device, there is now conda yaml support for dependency management.
 
 # DETECT: Deception Tracking Through Eye Cues Technology
 
@@ -33,6 +32,8 @@ The following features are currently available (almost all are experimental :P):
 |```csv_interval [sec]```|🚨 **[Doesn't work]** Sets the time interval between each collected data point for the csv|
 |```export::graph```|Export the tracked eye data and graph it for easier comprehension and basic analysis|
 |```export::animation```|Estimate the gaze direction over time based on the tracked eye data|
+|```dot_display```|Toggle to either have drawing on video output or not|
+|```categorize```|Requires ``dot_display`` to be `true`; Displays an estimate on which direction of the tracked gaze|
 ___
 More features will be coming soon...
 
@@ -48,11 +49,11 @@ To get started with DETECT, follow these steps:
    ```
 
 2. **Set Up a Virtual Environment:**
-    - Using conda (recommended):
+    - Using conda/miniconda (recommended):
     ```bash
-    conda create --name detect
-    conda activate detect
+    conda env create -f environment.yaml
     ```
+    > This will also take care of the dependencies and you can directly start using the program!
    - Using venv:
    ```bash
    python -m venv env
@@ -61,7 +62,7 @@ To get started with DETECT, follow these steps:
    - Docker: 👨‍🍳🍳
    - Others: Task will be left to the reader
 
-3. **Install Dependencies:**
+3. **Install Dependencies (venv and other pip-based package managers):**
 
    ```bash
    pip install -r requirements.txt
