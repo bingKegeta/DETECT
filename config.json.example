@@ -9,7 +9,7 @@
         "graph": true,
         "animation": true
     },
-    "export_dir": "output/"
-    "dot_display": true,
+    "export_dir": "output/",
+    "dot_display": false,
     "categorize": true
 }
