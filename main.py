@@ -10,6 +10,7 @@ from PyQt5.QtCore import QTimer, Qt
 from src.args import load_config
 from src.process import process_frame
 from src.export import export_csv
+from src.graph import plot_final_graphs    
 import warnings
 
 # Suppress specific warning from protobuf
@@ -38,7 +39,7 @@ class WebcamWindow(QWidget):
 
 
 class GazeTrackingApp(QWidget):
-    def __init__(self, config):
+    def __init__(self, config, fps=30):
         super().__init__()
         self.config = config
         self.initUI()
@@ -47,6 +48,8 @@ class GazeTrackingApp(QWidget):
         self.webcam_window = None  # To hold the webcam window reference
 
         # Initialize data arrays to store gaze coordinates over time
+        self.fps = fps  # Frames per second for precise timestamp calculations
+        self.frame_count = 0  # Frame counter to calculate precise timestamps
         self.time_data = []
         self.x_data = []
         self.y_data = []
@@ -92,14 +95,62 @@ class GazeTrackingApp(QWidget):
         self.play_pause_button.setText("Play" if self.paused else "Pause")
 
     def close_app(self):
-        """Stop the webcam and close both windows."""
+        """Stop the webcam, export data, and close both windows."""
+        # Export CSV and graph before closing the application
+        if self.config['export']['csv'] or self.config['export']['graph']:
+            if not os.path.exists(self.config['export_dir']):
+                os.makedirs(self.config['export_dir'], exist_ok=True)
+
+        if self.config['export']['csv']:
+            csv_path = os.path.join(self.config['export_dir'], "gaze_data.csv")
+            export_csv(self.x_data, self.y_data, self.time_data, csv_path)
+            print(f"CSV file saved to: {csv_path}")
+
+        if self.config['export']['graph']:
+            graph_path = os.path.join(self.config['export_dir'], "final_comprehensive_plots.png")
+            self.export_graph(graph_path)
+
+        # Close all windows and terminate the application properly
+        self.cleanup()
+
+    def export_graph(self, save_path):
+        """Function to export the graph to a file."""
+        # Create a new plot instance to export the data
+        app = QApplication(sys.argv)  # Ensure we have a running QApplication
+
+        plot_widget = pg.GraphicsLayoutWidget(show=False)
+        plot_widget.resize(800, 600)
+
+        ax_x = plot_widget.addPlot(title='X Coordinate Over Time')
+        ax_x.setLabel('left', 'X Coordinate')
+        ax_x.setLabel('bottom', 'Time (s)')
+        ax_x.plot(self.time_data, self.x_data, pen='r')
+
+        ax_y = plot_widget.addPlot(title='Y Coordinate Over Time', row=1, col=0)
+        ax_y.setLabel('left', 'Y Coordinate')
+        ax_y.setLabel('bottom', 'Time (s)')
+        ax_y.plot(self.time_data, self.y_data, pen='b')
+
+        scatter_ax = plot_widget.addPlot(title='2D Gaze Points Over Time', row=2, col=0)
+        scatter = pg.ScatterPlotItem(x=self.x_data, y=self.y_data, pen='g')
+        scatter_ax.addItem(scatter)
+
+        # Take a screenshot of the plot widget and save it
+        screenshot = plot_widget.grab()
+        screenshot.save(save_path, 'PNG')
+        print(f"Graph image saved to: {save_path}")
+
+        app.quit()  # Properly quit the QApplication after saving
+
+    def cleanup(self):
+        """Release the webcam and close all windows."""
         if self.cap:
             self.cap.release()  # Release the webcam
         if self.webcam_window:
             self.webcam_window.close()  # Close the webcam window
         self.close()  # Close the gaze tracking window
         cv2.destroyAllWindows()  # Close any OpenCV windows if they exist
-
+        QApplication.instance().quit()  # Quit the application
 
 def main():
     # Ensure that the JSON file path is provided as a command-line argument
@@ -119,11 +170,16 @@ def main():
     # Initialize video capture based on the configuration
     if config['source'] == 'webcam':
         cap = cv2.VideoCapture(0)
+        fps = 30  # Assume default FPS for webcam input
     elif config['source'] in ['image', 'video']:
         if not config['path']:
             print("Error: 'path' field is required in the configuration when 'source' is 'image' or 'video'.")
             return
         cap = cv2.VideoCapture(config['path'])
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps == 0 or fps is None:
+            print("Warning: Unable to determine FPS from video. Defaulting to 30.")
+            fps = 30  # Default FPS if unable to get from video source
     else:
         print("Error: Invalid source type provided in the configuration. Use 'webcam', 'image', or 'video'.")
         return
@@ -137,7 +193,7 @@ def main():
     app = QApplication(sys.argv)
 
     # Create main window for gaze tracking
-    gaze_window = GazeTrackingApp(config)
+    gaze_window = GazeTrackingApp(config, fps)
     gaze_window.cap = cap
     gaze_window.resize(1280, 720)  # Set a reasonable starting size for the gaze window
     gaze_window.show()
@@ -162,8 +218,10 @@ def main():
                 
                 # Only update plots if eyes are detected
                 if iris_detected:
-                    current_time = time.time()  # Use real-time timestamp for plotting
+                    # Use FPS and frame count to calculate timestamp
+                    current_time = gaze_window.frame_count / gaze_window.fps
                     gaze_window.time_data.append(current_time)
+                    gaze_window.frame_count += 1  # Increment frame counter
 
                     # Update plots with new gaze data
                     gaze_window.x_curve.setData(gaze_window.time_data, gaze_window.x_data)
