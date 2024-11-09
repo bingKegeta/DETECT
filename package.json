@@ -1,0 +1,16 @@
+{
+    "name": "gaze-tracking",
+    "version": "1.0.0",
+    "description": "Real-time gaze tracking with face-api.js",
+    "main": "index.html",
+    "scripts": {
+      "start": "live-server"
+    },
+    "dependencies": {
+      "face-api.js": "^0.22.2",
+      "live-server": "^1.2.1"
+    },
+    "author": "",
+    "license": ""
+  }
+  
