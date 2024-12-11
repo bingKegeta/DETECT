@@ -1,134 +1,94 @@
-> [!IMPORTANT]
-> **MIGRATION TO JSON COMPLETED!!!**
-> 
-> This version removes the cli arguments previously required to run various configs in favor of using a JSON config file. 
+# HMM Branch - Hidden Markov Model for Deception Detection
 
-> [!NOTE]
-> It is now possible to export the raw coordinates of the eyes as a csv file, a png with 4 graphs showing more insight into the gathered data and a nifty mp4 animation showcasing an estimated simulation of the gaze through the gathered data!
+## Overview
+This branch introduces a Hidden Markov Model (HMM) for detecting deception based on gaze tracking data. It incorporates the following features:
+- **HMM Model**: Trained using baseline gaze data (variance, velocity, and time) to classify states (e.g., truthful vs. deceptive).
+- **PyQt Training Visualization**: Visual representation of model training, including variance, velocity, and transition probabilities.
+- **Deception Probability Computation**: Calculates probabilities for session data and includes them in the exported CSV.
 
-# DETECT: Deception Tracking Through Eye Cues Technology
+## Key Features
+1. **Flexible Baseline Handling**:
+   - Can process a baseline video and generate CSV data for training.
+   - Alternatively, directly use a preprocessed baseline CSV.
+   - Configuration handled via `config.json`.
 
-> Note: This project has just been started and is mostly research as of now.
+2. **Session Data Analysis**:
+   - Processes session videos to compute gaze data and deception probabilities.
+   - Exports results in CSV format with `Time`, `X Coordinate`, `Y Coordinate`, and `Deception Probability`.
 
-Welcome to DETECT! This project aims to revolutionize the field of deception detection by leveraging advanced gaze tracking technology. Utilizing the powerful MediaPipe framework, DETECT analyzes eye cues to offer a new dimension in understanding and interpreting human behavior.
+3. **Graphical Visualization**:
+   - Real-time graphs for gaze data (`X`, `Y` coordinates).
+   - Training visualization includes variance, velocity, and HMM transition matrix.
 
-## 📜 Overview
+## Example `config.json`
+```json
+{
+  "source": "video",
+  "path": "test_media/session_video.mp4",
+  "baseline_video": "test_media/baseline_video.mp4",
+  "baseline_csv": "exports/baseline.csv",
+  "export": {
+    "csv": true,
+    "graph": true,
+    "animation": true
+  },
+  "export_dir": "./exports",
+  "dot_display": false,
+  "categorize": true,
+  "graph": true,
+  "affine": true,
+  "csv_interval": 1.0,
+  "baseline": true
+}
+```
 
-DETECT (Deception Tracking Through Eye Cues Technology) is a cutting-edge project designed to track and analyze eye movements to assist in identifying potential deception. By triangulating the position of the iris, DETECT provides valuable insights into gaze patterns that can be indicative of truthfulness or deception.
 
-<!-- ## 🚀 Features
+## `config.json` Parameters
 
-- **Real-Time Gaze Tracking:** Accurate triangulation of the iris location for precise gaze direction analysis.
-- **MediaPipe Integration:** Harnesses the power of MediaPipe for efficient and reliable eye cue extraction.
-- **Deception Insights:** Provides a foundation for further research into gaze patterns and their correlation with deceptive behavior. -->
-## ⚙️ Features
+The `config.json` file contains configuration options for running the application. Below is a breakdown of the parameters:
 
-The following features are currently available (almost all are experimental :P):
-|Feature|Description|
-|-------|-----------|
-|```affine```|Use the Face normalization algorithm for possible improvement in precision|
-|```graph```|Graph the x-time and y-time plots to see the changes in real time|
-|```dot_display```|Show the iris/pupil as tracked by mediapipe (might reduce load)|
-|```export::csv```|Export the tracked eye data into a csv file for advanced analysis|
-|```csv_interval [sec]```|🚨 **[Doesn't work]** Sets the time interval between each collected data point for the csv|
-|```export::graph```|Export the tracked eye data and graph it for easier comprehension and basic analysis|
-|```export::animation```|Estimate the gaze direction over time based on the tracked eye data|
-___
-More features will be coming soon...
+### Main Parameters
+- **`source`**: Specifies the input source for gaze tracking. Options:
+  - `"webcam"`: Uses the webcam for real-time tracking.
+  - `"video"`: Uses a video file for analysis.
+  - `"image"`: Uses an image file for analysis.
 
-## 🛠️ Installation
+- **`path`**: Path to the session video or image file to be processed (e.g., `"test_media/session_video.mp4"`).
 
-To get started with DETECT, follow these steps:
+### Baseline Parameters
+- **`baseline`**: (`true`/`false`) Indicates whether baseline data is used for training the HMM model.
+- **`baseline_video`**: Path to the baseline video file (optional). If provided, the video is processed to generate a baseline CSV file.
+- **`baseline_csv`**: Path to an existing baseline CSV file. Used if `baseline_video` is not provided.
 
-1. **Clone the Repository:**
+### Export Options
+- **`export`**: Object containing export preferences:
+  - **`csv`**: (`true`/`false`) Exports gaze data and deception probabilities to a CSV file.
+  - **`graph`**: (`true`/`false`) Exports gaze data graphs to an image file.
+  - **`animation`**: (`true`/`false`) Exports a real-time animation of gaze tracking (if implemented).
 
-   ```bash
-   git clone https://github.com/bingKegeta/DETECT.git
-   cd DETECT
-   ```
+- **`export_dir`**: Directory where export files (CSV, graphs) will be saved.
 
-2. **Set Up a Virtual Environment:**
-    - Using conda (recommended):
-    ```bash
-    conda create --name detect
-    conda activate detect
-    ```
-   - Using venv:
-   ```bash
-   python -m venv env
-   source env/bin/activate  # On Windows, use `env\Scripts\activate`
-   ```
-   - Docker: 👨‍🍳🍳
-   - Others: Task will be left to the reader
+### Processing Options
+- **`dot_display`**: (`true`/`false`) Displays dots over detected gaze points for visualization.
+- **`categorize`**: (`true`/`false`) Categorizes gaze direction (e.g., left, center, right) for debugging or analysis.
+- **`graph`**: (`true`/`false`) Displays real-time graphs of gaze data during processing.
+- **`affine`**: (`true`/`false`) Applies affine transformations to stabilize gaze coordinates.
 
-3. **Install Dependencies:**
+### Session Parameters
+- **`csv_interval`**: Interval (in seconds) for saving gaze data to the CSV file.
+- **`baseline`**: (`true`/`false`) Enables baseline processing and model training using either `baseline_video` or `baseline_csv`.
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+## Updated Files
+1. **`main.py`**: Manages the overall flow, baseline setup, and session processing.
+2. **`process.py`**: Processes video frames to extract gaze data.
+3. **`hmm.py`**: Implements the HMM model and training visualization.
+4. **`export.py`**: Updates CSV export to include deception probabilities.
+5. **`utils.py`**: Utility functions for data handling.
 
-## 🔧 Usage
-
-1. **Make a configuration file (JSON):**
-   - The file contains various options but the basic schema is this:
-   ```json
-   {
-      "source":["webcam", "image", "video"], # Choose any one of those
-      "path": "/path/to/media", # Only include when the source is not webcam
-      "graph": boolean, # Only if you want graph updates (fps will be hit)
-      "affine": boolean, # If you want affine tranform processing
-      "csv_interval": number, # Doesn't work yet
-      "export": {
-         "csv": boolean, # Do you want csv output?
-         "graph": boolean, # Do you want a comprehensive graph?
-         "animation": boolean, # Do you want a nifty animation?
-      },
-      "export_dir": "/path/to/dir/" # Where do you want to store those files?
-   }
-   ```
-2. **Run the Application:**
+## Usage
+1. Modify `config.json` with the desired settings.
+2. Run the application:
    ```bash
    python main.py config.json
    ```
-
-3. **Start Analyzing:**
-   - The application will initiate your camera and begin tracking eye movements.
-   - Use the provided interface to view and analyze gaze data.
-
-<!-- ## 📚 Documentation
-
-For detailed documentation and usage instructions, please refer to the [Wiki](https://github.com/bingKegeta/DETECT/wiki) or the `docs` directory. -->
-
-<!-- ## 🎯 Contributing
-
-We welcome contributions to enhance DETECT's capabilities! If you have ideas, bug reports, or wish to contribute, please follow these steps:
-
-1. **Fork the Repository**
-2. **Create a New Branch**
-3. **Make Your Changes**
-4. **Submit a Pull Request**
-
-Please review our [Contribution Guidelines](CONTRIBUTING.md) before getting started. -->
-
-<!-- ## 💬 Contact
-
-For questions or support, feel free to reach out to us:
-
-- **Email:** <email>
-- **Issues:** [GitHub Issues](https://github.com/bingKegeta/DETECT/issues) -->
-
-<!-- ## 🔗 Links
-
-- [GitHub Repository](https://github.com/yourusername/DETECT)
-- [Project Wiki](https://github.com/yourusername/DETECT/wiki)
-- [Documentation](docs/) -->
-
-## 📜 License
-
-This project is licensed under the [MIT License](LICENSE).
-
----
-<!-- 
-Thank you for your interest in DETECT! We look forward to your contributions and hope you find our technology useful in advancing the study of human behavior. Happy detecting!
-
---- -->
+3. View training visualization and exported CSV in the specified output directory.
