@@ -1,16 +1,170 @@
-from turtle import st
 import cv2
 import time
-import matplotlib.pyplot as plt
-from src.args import load_config
-from src.process import process_frame
-from src.animation import create_gaze_animation
-from src.graph import plot_gaze_tracking, plot_final_graphs
-from src.export import export_csv
 import numpy as np
 import sys
 import os
+import pyqtgraph as pg
+from PyQt5.QtWidgets import QApplication, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QPushButton
+from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtCore import QTimer, Qt
+from src.args import load_config
+from src.process import process_frame, process_baseline_video
+from src.export import export_csv
+from src.graph import plot_final_graphs    
+from src.utils import load_baseline_data
+from src.hmm import HiddenMarkovModel
+import warnings
 
+# Suppress specific warning from protobuf
+warnings.filterwarnings("ignore", category=UserWarning, module="google.protobuf.symbol_database")
+
+class WebcamWindow(QWidget):
+    """Window to display webcam feed."""
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Webcam")
+        self.video_label = QLabel(self)
+        self.video_label.setScaledContents(True)  # Allows the video feed to scale
+        self.video_label.setFixedSize(640, 480)  # Set webcam display size
+
+        layout = QVBoxLayout()
+        layout.addWidget(self.video_label)
+        self.setLayout(layout)
+
+    def update_video(self, frame):
+        """Convert the frame to QImage and update the video QLabel."""
+        rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert BGR to RGB
+        h, w, ch = rgb_image.shape
+        bytes_per_line = ch * w
+        q_image = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        self.video_label.setPixmap(QPixmap.fromImage(q_image))  # Update QLabel with QImage
+
+
+class GazeTrackingApp(QWidget):
+    def __init__(self, config, fps=30):
+        super().__init__()
+        self.config = config
+        self.initUI()
+        self.paused = False  # Initialize pause state
+        self.cap = None  # Video capture object will be initialized in main
+        self.webcam_window = None  # To hold the webcam window reference
+
+        # Initialize data arrays to store gaze coordinates over time
+        self.fps = fps  # Frames per second for precise timestamp calculations
+        self.frame_count = 0  # Frame counter to calculate precise timestamps
+        self.time_data = []
+        self.x_data = []
+        self.y_data = []
+        self.deception_data = []  # Initialize deception data to store probabilities
+
+    def initUI(self):
+        # Main layout
+        main_layout = QVBoxLayout(self)
+        self.setWindowTitle("Graphs")
+
+        # Set up real-time graphing for gaze data
+        self.win = pg.GraphicsLayoutWidget(show=True, title="Gaze Tracking")
+        main_layout.addWidget(self.win, stretch=1)  # Add graphs to the main layout
+
+        # Add line plots and scatter plot to the graphics view
+        self.ax_x = self.win.addPlot(title='X Coordinate Over Time')
+        self.ax_x.setLabel('left', 'X Coordinate')
+        self.ax_x.setLabel('bottom', 'Time (s)')
+        self.x_curve = self.ax_x.plot(pen='r')  # X coordinate curve
+
+        self.ax_y = self.win.addPlot(title='Y Coordinate Over Time', row=1, col=0)
+        self.ax_y.setLabel('left', 'Y Coordinate')
+        self.ax_y.setLabel('bottom', 'Time (s)')
+        self.y_curve = self.ax_y.plot(pen='b')  # Y coordinate curve
+
+        self.ax_prob = self.win.addPlot(title='Deception Probability Over Time', row=3, col=0)
+        self.ax_prob.setLabel('left', 'Probability')
+        self.ax_prob.setLabel('bottom', 'Time (s)')
+        self.prob_curve = self.ax_prob.plot(pen='g')  # Deception probability curve
+
+        self.scatter_ax = self.win.addPlot(title='2D Gaze Points Over Time', row=2, col=0)
+        self.scatter = pg.ScatterPlotItem(pen='g')  # Scatter plot for 2D points
+        self.scatter_ax.addItem(self.scatter)
+
+        # Play/Pause Button
+        self.play_pause_button = QPushButton("Pause")
+        self.play_pause_button.clicked.connect(self.toggle_pause)
+        self.play_pause_button.setStyleSheet("background-color: lightblue; color: white;")  # Set button color to blue
+        main_layout.addWidget(self.play_pause_button)
+
+        # Close Button
+        self.close_button = QPushButton("Close")
+        self.close_button.clicked.connect(self.close_app)
+        self.close_button.setStyleSheet("background-color: red; color: white;")  # Set button color to red
+        main_layout.addWidget(self.close_button)
+
+    def toggle_pause(self):
+        self.paused = not self.paused
+        self.play_pause_button.setText("Play" if self.paused else "Pause")
+
+    def close_app(self):
+        """Stop the webcam, export data, and close both windows."""
+        # Export CSV and graph before closing the application
+        if self.config['export']['csv'] or self.config['export']['graph']:
+            if not os.path.exists(self.config['export_dir']):
+                os.makedirs(self.config['export_dir'], exist_ok=True)
+
+        if self.config['export']['csv']:
+            csv_path = os.path.join(self.config['export_dir'], "gaze_data.csv")
+            export_csv(self.x_data, self.y_data, self.time_data, self.deception_data, csv_path)
+            print(f"CSV file saved to: {csv_path}")
+
+        if self.config['export']['graph']:
+            graph_path = os.path.join(self.config['export_dir'], "final_comprehensive_plots.png")
+            self.export_graph(graph_path)
+
+        # Close all windows and terminate the application properly
+        self.cleanup()
+
+    def export_graph(self, save_path):
+        """Function to export the graph to a file."""
+        # Create a new plot instance to export the data
+        app = QApplication(sys.argv)  # Ensure we have a running QApplication
+
+        plot_widget = pg.GraphicsLayoutWidget(show=False)
+        plot_widget.resize(800, 600)
+
+        ax_x = plot_widget.addPlot(title='X Coordinate Over Time')
+        ax_x.setLabel('left', 'X Coordinate')
+        ax_x.setLabel('bottom', 'Time (s)')
+        ax_x.plot(self.time_data, self.x_data, pen='r')
+
+        ax_y = plot_widget.addPlot(title='Y Coordinate Over Time', row=1, col=0)
+        ax_y.setLabel('left', 'Y Coordinate')
+        ax_y.setLabel('bottom', 'Time (s)')
+        ax_y.plot(self.time_data, self.y_data, pen='b')
+
+        scatter_ax = plot_widget.addPlot(title='2D Gaze Points Over Time', row=2, col=0)
+        scatter = pg.ScatterPlotItem(x=self.x_data, y=self.y_data, pen='g')
+        scatter_ax.addItem(scatter)
+
+        ax_prob = plot_widget.addPlot(title='Deception Probability Over Time', row=3, col=0)
+        ax_prob.setLabel('left', 'Probability')
+        ax_prob.setLabel('bottom', 'Time (s)')
+        ax_prob.plot(self.time_data, self.deception_data, pen='g')
+
+        # Take a screenshot of the plot widget and save it
+        screenshot = plot_widget.grab()
+        screenshot.save(save_path, 'PNG')
+        print(f"Graph image saved to: {save_path}")
+
+        app.quit()  # Properly quit the QApplication after saving
+
+    def cleanup(self):
+        """Release the webcam and close all windows."""
+        if self.cap:
+            self.cap.release()  # Release the webcam
+        if self.webcam_window:
+            self.webcam_window.close()  # Close the webcam window
+        self.close()  # Close the gaze tracking window
+        cv2.destroyAllWindows()  # Close any OpenCV windows if they exist
+        QApplication.instance().quit()  # Quit the application
+        
 def main():
     # Ensure that the JSON file path is provided as a command-line argument
     if len(sys.argv) != 2:
@@ -19,26 +173,25 @@ def main():
     
     config_file = sys.argv[1]
 
+    print(config_file)
+
     # Load the configuration from the JSON file
     try:
         config = load_config(config_file)
     except Exception as e:
         print(f"Error loading configuration: {e}")
         return
-
-    frame_count = 0  # Initialize frame counter for FPS calculation
-    fps = None  # Initialize FPS variable
-
+    
     # Initialize video capture based on the configuration
     if config['source'] == 'webcam':
         cap = cv2.VideoCapture(0)
-        start_time = time.time() # Start time for FPS calculation
+        fps = 30  # Assume default FPS for webcam input
     elif config['source'] in ['image', 'video']:
         if not config['path']:
             print("Error: 'path' field is required in the configuration when 'source' is 'image' or 'video'.")
             return
         cap = cv2.VideoCapture(config['path'])
-        fps = cap.get(cv2.CAP_PROP_FPS)  # Get FPS for video files
+        fps = cap.get(cv2.CAP_PROP_FPS)
         if fps == 0 or fps is None:
             print("Warning: Unable to determine FPS from video. Defaulting to 30.")
             fps = 30  # Default FPS if unable to get from video source
@@ -51,125 +204,91 @@ def main():
         print("Error: Unable to open video source. Check the camera index or file path.")
         return
 
-    # Get video properties
-    ret, frame = cap.read()
-    if not ret:
-        print("Error: Unable to read the first frame.")
-        cap.release()
-        return
+    # Initialize the QApplication
+    app = QApplication(sys.argv)
 
-    height, width = frame.shape[:2]
+    # Create main window for gaze tracking
+    gaze_window = GazeTrackingApp(config, fps)
+    gaze_window.cap = cap
+    gaze_window.resize(1280, 720)  # Set a reasonable starting size for the gaze window
+    gaze_window.show()
 
-    # Reinitialize video capture to start from the first frame
-    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    # Initialize the HMM for deception detection
+    gaze_window.hmm = HiddenMarkovModel()
 
-    # Initialize data arrays to store gaze coordinates over time
-    x_data = []
-    y_data = []
-    time_data = []
+    # Handle baseline setup and train the HMM
+    if config.get("baseline", False):
+        baseline_path = config.get("baseline_path", None)
+        baseline_csv_path = config.get("baseline_csv", None)
 
-    # Set up real-time graphing if required
-    if config['graph']:
-        plt.ion()
-
-        # Create a figure with 4 subplots: 2 line plots, 1 2D scatter, and 1 3D scatter
-        fig = plt.figure(figsize=(15, 10))
-
-        # Line Plot for X Coordinate
-        ax_x = fig.add_subplot(2, 2, 1)
-        ax_x.set_title('X Coordinate Over Time')
-        ax_x.set_xlabel('Time (s)')
-        ax_x.set_ylabel('X Coordinate')
-        ax_x.legend(['X Coordinate (Left-Right)'])
-        ax_x.grid(True)
-
-        # Line Plot for Y Coordinate
-        ax_y = fig.add_subplot(2, 2, 2)
-        ax_y.set_title('Y Coordinate Over Time')
-        ax_y.set_xlabel('Time (s)')
-        ax_y.set_ylabel('Y Coordinate')
-        ax_y.legend(['Y Coordinate (Up-Down)'])
-        ax_y.grid(True)
-
-        # 2D Scatter Plot
-        scatter_ax = fig.add_subplot(2, 2, 3)
-        scatter_ax.set_title('2D Gaze Points Over Time')
-        scatter_ax.set_xlabel('Horizontal Coordinate')
-        scatter_ax.set_ylabel('Vertical Coordinate')
-        scatter_ax.invert_yaxis()
-
-        # 3D Scatter Plot
-        scatter3d_ax = fig.add_subplot(2, 2, 4, projection='3d')
-        scatter3d_ax.set_title('3D Gaze Points')
-        scatter3d_ax.set_xlabel('Horizontal Coordinate')
-        scatter3d_ax.set_ylabel('Vertical Coordinate')
-        scatter3d_ax.set_zlabel('Time (s)')
-        scatter3d_ax.invert_yaxis()
-
-    last_csv_time = 0  # For controlling CSV export interval
-
-    # Ensure the export directory exists or create it
-    if config['export']['csv'] or config['export']['graph']:
-        try:
-            os.makedirs(config['export_dir'], exist_ok=True)
-        except Exception as e:
-            print(f"Error creating export directory '{config['export_dir']}': {e}")
+        if baseline_csv_path:
+            print(f"Loading baseline CSV from: {baseline_csv_path}")
+            baseline_x, baseline_y, baseline_time = load_baseline_data(baseline_csv_path)
+            print(f"Loaded {len(baseline_x)} data points from baseline CSV.")
+            gaze_window.hmm.train(baseline_x, baseline_y, baseline_time)
+            print("HMM training completed using baseline CSV data.")
+        elif baseline_path:
+            print(f"Processing baseline video: {baseline_path}")
+            baseline_data = process_baseline_video(baseline_path)
+            export_csv(*baseline_data, os.path.join(config["export_dir"], "baseline.csv"))
+            baseline_x, baseline_y, baseline_time = baseline_data
+            gaze_window.hmm.train(baseline_x, baseline_y, baseline_time)
+            print("HMM training completed using processed baseline video data.")
+        else:
+            print("Error: Baseline enabled but no path provided for baseline CSV or video.")
             return
 
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
+    # Create a separate window for the webcam feed
+    gaze_window.webcam_window = WebcamWindow()  # Store the webcam window in the gaze_window
+    gaze_window.webcam_window.show()
 
-        if fps is None:
-            current_time = time.time() - start_time  # For webcam: Use real-time timestamp
-        else:
-            frame_count += 1  # Increment frame counter
-            current_time = frame_count / fps  # For video files: Use FPS-based timestamp
+    def update_frame():
+        if not gaze_window.paused:
+            ret, frame = gaze_window.cap.read()
+            if not ret:
+                gaze_window.cap.release()
+                return
 
-        # Process the frame and update gaze data
-        stabilized_frame, iris_detected = process_frame(frame, x_data, y_data, config['affine'], config['dot_display'], config['categorize'])
+            # Process the frame and update gaze data
+            try:
+                stabilized_frame, iris_detected = process_frame(
+                    frame, gaze_window.x_data, gaze_window.y_data,
+                    config['affine'], config['dot_display'], config['categorize']
+                )
+                
+                # Only update plots if eyes are detected
+                if iris_detected:
+                    # Use FPS and frame count to calculate timestamp
+                    current_time = gaze_window.frame_count / gaze_window.fps
+                    gaze_window.time_data.append(current_time)
+                    gaze_window.frame_count += 1  # Increment frame counter
 
-        # If gaze points were detected, update time and plot
-        if iris_detected:
-            time_data.append(current_time)
+                    # Use the HMM to calculate deception probability
+                    prob = gaze_window.hmm.predict_proba(gaze_window.x_data[-1], gaze_window.y_data[-1], current_time)
+                    gaze_window.deception_data.append(prob[0][1])  # Append probability of "deception" state
 
-            if config['graph']:
-                plot_gaze_tracking(time_data, x_data, y_data, ax_x, ax_y, scatter_ax, scatter3d_ax)
+                    # Update plots with new gaze data
+                    gaze_window.x_curve.setData(gaze_window.time_data, gaze_window.x_data)
+                    gaze_window.y_curve.setData(gaze_window.time_data, gaze_window.y_data)
+                    gaze_window.scatter.setData(gaze_window.x_data, gaze_window.y_data)
 
-            # Export data to CSV at specified interval, if enabled
-            if config['export']['csv'] and current_time - last_csv_time >= config['csv_interval']:
-                csv_path = os.path.join(config['export_dir'], "raw_data.csv")
-                export_csv(x_data, y_data, time_data, csv_path)
-                last_csv_time = current_time
+                    # Update the deception probability graph
+                    if len(gaze_window.time_data) == len(gaze_window.deception_data):  # Ensure alignment
+                        gaze_window.prob_curve.setData(gaze_window.time_data, gaze_window.deception_data)
 
-        # Display video with iris tracking
-        cv2.imshow('Gaze Tracking', stabilized_frame)
+                # Display the processed frame (regardless of iris detection)
+                gaze_window.webcam_window.update_video(stabilized_frame)
+            
+            except Exception as e:
+                print(f"Error processing frame: {e}")
 
-        # Exit on 'q' press
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+    # Set up a timer to call update_frame at regular intervals
+    timer = QTimer()
+    timer.timeout.connect(update_frame)
+    timer.start(30)  # Adjust interval to control the update frequency
 
-    # Clean up
-    cap.release()
-    cv2.destroyAllWindows()
-
-    gaze_positions = np.column_stack((x_data, y_data)).tolist()  # Convert to list of (x, y) tuples
-    # Calculate total duration
-    if config['source'] == 'webcam':
-        if time_data and time_data[-1] > 0:
-            fps = len(gaze_positions) / time_data[-1]
-        else:
-            fps = 30  # Default FPS if unable to calculate
-    
-    # Create gaze animation if animation export is enabled
-    if config['export']['animation']:
-        create_gaze_animation(gaze_positions, width, height, fps=int(fps), save_path=config['animation_out'])
-
-    # Create the graph image if graph export is enabled
-    if config['export']['graph']:
-        plot_final_graphs(time_data, x_data, y_data, save_path=config['graph_out'])
-    
+    sys.exit(app.exec_())
 
 if __name__ == "__main__":
+    print("Starting gaze tracking application...")
     main()

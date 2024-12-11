@@ -1,15 +1,18 @@
 {
-    "source": "webcam",
-    "path": null,
-    "graph": false,
-    "affine": false,
-    "csv_interval": 1.0,
-    "export": { 
-        "csv": true, 
-        "graph": true,
-        "animation": true
-    },
-    "export_dir": "output/"
-    "dot_display": true,
-    "categorize": true
+  "source": "video", 
+  "path": "test_media/session_video.mp4",
+  "baseline_video": "test_media/baseline_video.mp4",
+  "baseline_csv": "exports/baseline.csv",
+  "export": {
+    "csv": true,
+    "graph": true,
+    "animation": true
+  },
+  "export_dir": "output/",
+  "dot_display": false,
+  "categorize": true,
+  "graph": true,
+  "affine": true,
+  "csv_interval": 1.0,
+  "baseline": true  
 }

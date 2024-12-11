@@ -4,3 +4,4 @@ test_media/*
 *.mp4
 *.png
 *.json
+*.txt

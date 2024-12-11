@@ -1,0 +1,17 @@
+{
+  "source": "video",
+  "path": "test_media/session_video.mp4",
+  "baseline": true,
+  "baseline_video": null,
+  "baseline_csv": "exports/baseline.csv",
+  "export": {
+    "csv": true,
+    "graph": true,
+    "animation": true
+  },
+  "export_dir": "./exports",
+  "affine": true,
+  "dot_display": true,
+  "categorize": false,
+  "csv_interval": 1.0
+}

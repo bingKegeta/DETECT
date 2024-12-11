@@ -92,3 +92,25 @@ def get_affine_transform(landmarks, img_w, img_h):
     dst_points = np.array([ref_left_eye, ref_right_eye, ref_nose_bridge], dtype=np.float32)
 
     return cv2.getAffineTransform(src_points, dst_points)
+
+# Process the baseline video for gaze data
+def process_baseline_video(video_path):
+    x_data, y_data, time_data = [], [], []
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    frame_count = 0
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        _, iris_detected = process_frame(frame, x_data, y_data, apply_affine=False, display=False, categorize=False)
+        if iris_detected:
+            time_data.append(frame_count / fps)
+
+        frame_count += 1
+
+    cap.release()
+    print(f"Finished processing baseline video. Frames processed: {frame_count}")
+    return x_data, y_data, time_data
