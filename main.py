@@ -9,7 +9,7 @@ from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import QTimer, Qt
 from src.args import load_config
 from src.process import process_frame, process_baseline_video
-from src.export import export_csv
+from src.export import export_csv, export_graph
 from src.graph import plot_final_graphs    
 from src.utils import load_baseline_data
 from src.hmm import HiddenMarkovModel
@@ -77,11 +77,6 @@ class GazeTrackingApp(QWidget):
         self.ax_y.setLabel('bottom', 'Time (s)')
         self.y_curve = self.ax_y.plot(pen='b')  # Y coordinate curve
 
-        self.ax_prob = self.win.addPlot(title='Deception Probability Over Time', row=3, col=0)
-        self.ax_prob.setLabel('left', 'Probability')
-        self.ax_prob.setLabel('bottom', 'Time (s)')
-        self.prob_curve = self.ax_prob.plot(pen='g')  # Deception probability curve
-
         self.scatter_ax = self.win.addPlot(title='2D Gaze Points Over Time', row=2, col=0)
         self.scatter = pg.ScatterPlotItem(pen='g')  # Scatter plot for 2D points
         self.scatter_ax.addItem(self.scatter)
@@ -103,57 +98,55 @@ class GazeTrackingApp(QWidget):
         self.play_pause_button.setText("Play" if self.paused else "Pause")
 
     def close_app(self):
-        """Stop the webcam, export data, and close both windows."""
-        # Export CSV and graph before closing the application
-        if self.config['export']['csv'] or self.config['export']['graph']:
-            if not os.path.exists(self.config['export_dir']):
-                os.makedirs(self.config['export_dir'], exist_ok=True)
+        """Stop the webcam, process features, export data, and close all windows."""
+        try:
+            # Process features and deception probabilities
+            features = self.hmm.prepare_features(self.x_data, self.y_data, self.time_data)
 
-        if self.config['export']['csv']:
-            csv_path = os.path.join(self.config['export_dir'], "gaze_data.csv")
-            export_csv(self.x_data, self.y_data, self.time_data, self.deception_data, csv_path)
-            print(f"CSV file saved to: {csv_path}")
+            # Predict deception probabilities for the entire session
+            probabilities = [self.hmm.predict_proba(f.reshape(1, -1))[0][1] for f in features]
+            self.deception_data = probabilities  # Store probabilities for exporting
 
-        if self.config['export']['graph']:
-            graph_path = os.path.join(self.config['export_dir'], "final_comprehensive_plots.png")
-            self.export_graph(graph_path)
+            # Determine the aligned time and gaze data for export
+            # Since deception_data is based on features derived from the last 3 data points,
+            # we need to trim the first 2 entries from time_data, x_data, and y_data
+            aligned_time_data = self.time_data[2:]
+            aligned_x_data = self.x_data[2:]
+            aligned_y_data = self.y_data[2:]
 
-        # Close all windows and terminate the application properly
-        self.cleanup()
+            # Ensure that the lengths match
+            if not (len(aligned_time_data) == len(aligned_x_data) == len(aligned_y_data) == len(self.deception_data)):
+                raise ValueError(f"Data length mismatch: Time({len(aligned_time_data)}), "
+                                f"X({len(aligned_x_data)}), Y({len(aligned_y_data)}), "
+                                f"Deception({len(self.deception_data)})")
 
-    def export_graph(self, save_path):
-        """Function to export the graph to a file."""
-        # Create a new plot instance to export the data
-        app = QApplication(sys.argv)  # Ensure we have a running QApplication
+            # Export CSV and graph
+            if self.config['export']['csv'] or self.config['export']['graph']:
+                if not os.path.exists(self.config['export_dir']):
+                    os.makedirs(self.config['export_dir'], exist_ok=True)
 
-        plot_widget = pg.GraphicsLayoutWidget(show=False)
-        plot_widget.resize(800, 600)
+            if self.config['export']['csv']:
+                csv_path = os.path.join(self.config['export_dir'], "gaze_data.csv")
+                export_csv(aligned_time_data, aligned_x_data, aligned_y_data, features, self.deception_data, csv_path)
+                print(f"CSV file saved to: {csv_path}")
 
-        ax_x = plot_widget.addPlot(title='X Coordinate Over Time')
-        ax_x.setLabel('left', 'X Coordinate')
-        ax_x.setLabel('bottom', 'Time (s)')
-        ax_x.plot(self.time_data, self.x_data, pen='r')
+            if self.config['export']['graph']:
+                graph_path = os.path.join(self.config['export_dir'], "final_comprehensive_plots.png")
+                export_graph(aligned_time_data, aligned_x_data, aligned_y_data, self.deception_data, graph_path)
 
-        ax_y = plot_widget.addPlot(title='Y Coordinate Over Time', row=1, col=0)
-        ax_y.setLabel('left', 'Y Coordinate')
-        ax_y.setLabel('bottom', 'Time (s)')
-        ax_y.plot(self.time_data, self.y_data, pen='b')
+        except Exception as e:
+            print(f"Error during export: {e}")
 
-        scatter_ax = plot_widget.addPlot(title='2D Gaze Points Over Time', row=2, col=0)
-        scatter = pg.ScatterPlotItem(x=self.x_data, y=self.y_data, pen='g')
-        scatter_ax.addItem(scatter)
+        # Cleanly close the application
+        if self.cap:
+            self.cap.release()
+        if self.webcam_window:
+            self.webcam_window.close()
+        self.close()
+        cv2.destroyAllWindows()
+        QApplication.quit()
+        print("Application closed successfully.")
 
-        ax_prob = plot_widget.addPlot(title='Deception Probability Over Time', row=3, col=0)
-        ax_prob.setLabel('left', 'Probability')
-        ax_prob.setLabel('bottom', 'Time (s)')
-        ax_prob.plot(self.time_data, self.deception_data, pen='g')
-
-        # Take a screenshot of the plot widget and save it
-        screenshot = plot_widget.grab()
-        screenshot.save(save_path, 'PNG')
-        print(f"Graph image saved to: {save_path}")
-
-        app.quit()  # Properly quit the QApplication after saving
 
     def cleanup(self):
         """Release the webcam and close all windows."""
@@ -262,19 +255,11 @@ def main():
                     current_time = gaze_window.frame_count / gaze_window.fps
                     gaze_window.time_data.append(current_time)
                     gaze_window.frame_count += 1  # Increment frame counter
-
-                    # Use the HMM to calculate deception probability
-                    prob = gaze_window.hmm.predict_proba(gaze_window.x_data[-1], gaze_window.y_data[-1], current_time)
-                    gaze_window.deception_data.append(prob[0][1])  # Append probability of "deception" state
-
+                        
                     # Update plots with new gaze data
                     gaze_window.x_curve.setData(gaze_window.time_data, gaze_window.x_data)
                     gaze_window.y_curve.setData(gaze_window.time_data, gaze_window.y_data)
                     gaze_window.scatter.setData(gaze_window.x_data, gaze_window.y_data)
-
-                    # Update the deception probability graph
-                    if len(gaze_window.time_data) == len(gaze_window.deception_data):  # Ensure alignment
-                        gaze_window.prob_curve.setData(gaze_window.time_data, gaze_window.deception_data)
 
                 # Display the processed frame (regardless of iris detection)
                 gaze_window.webcam_window.update_video(stabilized_frame)
