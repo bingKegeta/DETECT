@@ -20,11 +20,11 @@ class TrainingVisualization(QDialog):
         self.plot_transition_matrix(transition_matrix, means)
 
     def plot_features(self, features):
-        # Assuming features are in the format [time, variance, velocity, acceleration]
+        # Assuming features are in the format [time, variance, velocity, fixation]
         time = features[:, 0]
         variance = features[:, 1]
         velocity = features[:, 2]
-        acceleration = features[:, 3]
+        fixation = features[:, 3]
 
         p1 = self.win.addPlot(title="Normalized Variance Over Time")
         p1.plot(time, variance, pen='r')
@@ -36,9 +36,9 @@ class TrainingVisualization(QDialog):
         p2.setLabel('left', "Normalized Velocity")
         p2.setLabel('bottom', "Time (s)")
 
-        p3 = self.win.addPlot(title="Acceleration Over Time", row=2, col=0)
-        p3.plot(time, acceleration, pen='g')
-        p3.setLabel('left', "Acceleration")
+        p3 = self.win.addPlot(title="Fixation Over Time", row=2, col=0)
+        p3.plot(time, fixation, pen='g')
+        p3.setLabel('left', "Fixation")
         p3.setLabel('bottom', "Time (s)")
 
     def plot_transition_matrix(self, transition_matrix, means):
@@ -51,7 +51,9 @@ class TrainingVisualization(QDialog):
 
         # Display means as annotations
         for i, mean in enumerate(means):
-            p4.setLabel('right', f"State {i} Mean: {mean}")
+            text = pg.TextItem(f"State {i} Mean: {mean}", anchor=(0, 1))
+            text.setPos(i, i)
+            p4.addItem(text)
 
 class HiddenMarkovModel:
     def __init__(self):
@@ -61,8 +63,13 @@ class HiddenMarkovModel:
         """Train HMM using normalized and prepared features."""
         features = self.prepare_features(x_data, y_data, time_data)
 
+        # Debug: Log feature statistics
+        print(f"Feature Stats Before Training:")
+        print(f"Mean: {np.mean(features, axis=0)}, Std: {np.std(features, axis=0)}")
+
         # Initialize transition matrix
         self.model.transmat_ = np.array([[0.9, 0.1], [0.3, 0.7]])
+        print(f"Initial Transition Matrix: {self.model.transmat_}")
 
         # Initialize means and covariances
         baseline_mean = np.mean(features, axis=0)
@@ -80,6 +87,8 @@ class HiddenMarkovModel:
         if not hasattr(self.model, 'startprob_'):
             self.model.startprob_ = np.array([0.5, 0.5])
 
+        print(f"Initialized Means: {self.model.means_}")
+        
         # Train the HMM
         self.model.fit(features)
         print("HMM training completed successfully!")
@@ -107,6 +116,7 @@ class HiddenMarkovModel:
         print(f"Input Feature: {feature}")
         print(f"Raw State Probabilities: {raw_probabilities}")
         print(f"Bounded Probabilities: {bounded_probabilities}")
+        
         return bounded_probabilities
 
     def prepare_features(self, x_data, y_data, time_data):
