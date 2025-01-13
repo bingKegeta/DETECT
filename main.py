@@ -1,3 +1,4 @@
+from pyexpat import features
 import cv2
 import time
 import numpy as np
@@ -9,7 +10,7 @@ from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import QTimer, Qt
 from src.args import load_config
 from src.process import process_frame, process_baseline_video
-from src.export import export_csv, export_graph
+from src.export import export_csv, export_graph, export_baseline_csv
 from src.graph import plot_final_graphs    
 from src.utils import load_baseline_data
 from src.hmm import HiddenMarkovModel
@@ -110,14 +111,14 @@ class GazeTrackingApp(QWidget):
             # Determine the aligned time and gaze data for export
             # Since deception_data is based on features derived from the last 3 data points,
             # we need to trim the first 2 entries from time_data, x_data, and y_data
-            aligned_time_data = self.time_data[2:]
-            aligned_x_data = self.x_data[2:]
-            aligned_y_data = self.y_data[2:]
+            time_data = self.time_data[2:]
+            x_data = self.x_data[2:]
+            y_data = self.y_data[2:]
 
             # Ensure that the lengths match
-            if not (len(aligned_time_data) == len(aligned_x_data) == len(aligned_y_data) == len(self.deception_data)):
-                raise ValueError(f"Data length mismatch: Time({len(aligned_time_data)}), "
-                                f"X({len(aligned_x_data)}), Y({len(aligned_y_data)}), "
+            if not (len(time_data) == len(x_data) == len(y_data) == len(self.deception_data)):
+                raise ValueError(f"Data length mismatch: Time({len(time_data)}), "
+                                f"X({len(x_data)}), Y({len(y_data)}), "
                                 f"Deception({len(self.deception_data)})")
 
             # Export CSV and graph
@@ -127,12 +128,12 @@ class GazeTrackingApp(QWidget):
 
             if self.config['export']['csv']:
                 csv_path = os.path.join(self.config['export_dir'], "gaze_data.csv")
-                export_csv(aligned_time_data, aligned_x_data, aligned_y_data, features, self.deception_data, csv_path)
+                export_csv(features, time_data, self.deception_data, csv_path)
                 print(f"CSV file saved to: {csv_path}")
 
             if self.config['export']['graph']:
                 graph_path = os.path.join(self.config['export_dir'], "final_comprehensive_plots.png")
-                export_graph(aligned_time_data, aligned_x_data, aligned_y_data, self.deception_data, graph_path)
+                export_graph(features, time_data, self.deception_data, graph_path)
 
         except Exception as e:
             print(f"Error during export: {e}")
@@ -211,21 +212,20 @@ def main():
 
     # Handle baseline setup and train the HMM
     if config.get("baseline", False):
-        baseline_path = config.get("baseline_path", None)
+        baseline_video_path = config.get("baseline_video", None)
         baseline_csv_path = config.get("baseline_csv", None)
 
         if baseline_csv_path:
             print(f"Loading baseline CSV from: {baseline_csv_path}")
-            baseline_x, baseline_y, baseline_time = load_baseline_data(baseline_csv_path)
-            print(f"Loaded {len(baseline_x)} data points from baseline CSV.")
-            gaze_window.hmm.train(baseline_x, baseline_y, baseline_time)
+            features = load_baseline_data(baseline_csv_path)
+            gaze_window.hmm.train(features)
             print("HMM training completed using baseline CSV data.")
-        elif baseline_path:
-            print(f"Processing baseline video: {baseline_path}")
-            baseline_data = process_baseline_video(baseline_path)
-            export_csv(*baseline_data, os.path.join(config["export_dir"], "baseline.csv"))
-            baseline_x, baseline_y, baseline_time = baseline_data
-            gaze_window.hmm.train(baseline_x, baseline_y, baseline_time)
+        elif baseline_video_path:
+            print(f"Processing baseline video: {baseline_video_path}")
+            baseline_x, baseline_y, baseline_time = process_baseline_video(baseline_video_path)
+            features = gaze_window.hmm.prepare_features(baseline_x, baseline_y, baseline_time)
+            gaze_window.hmm.train(features)
+            export_baseline_csv(features, baseline_time, os.path.join(config["export_dir"], "baseline.csv"))
             print("HMM training completed using processed baseline video data.")
         else:
             print("Error: Baseline enabled but no path provided for baseline CSV or video.")
