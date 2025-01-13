@@ -2,12 +2,11 @@ import csv
 import pyqtgraph as pg
 import os
 
-def export_graph(time_data, x_data, y_data, deception_data, save_path):
+def export_graph(features, time_data, deception_data, save_path):
     """
-    Export gaze tracking graphs (X, Y coordinates, deception probabilities, and scatter plot) to an image file.
+    Export feature graphs (variance, velocity, acceleration, and deception probabilities) to an image file.
+    :param features: Array of features [time, variance, velocity, acceleration].
     :param time_data: List of time values.
-    :param x_data: List of X coordinates.
-    :param y_data: List of Y coordinates.
     :param deception_data: List of deception probabilities.
     :param save_path: Path to save the graph image.
     """
@@ -19,28 +18,35 @@ def export_graph(time_data, x_data, y_data, deception_data, save_path):
         export_widget = pg.GraphicsLayoutWidget(show=False)
         export_widget.resize(800, 600)
 
-        # X Coordinate plot
-        ax_x = export_widget.addPlot(title='X Coordinate Over Time')
-        ax_x.setLabel('left', 'X Coordinate')
-        ax_x.setLabel('bottom', 'Time (s)')
-        ax_x.plot(time_data, x_data, pen='r')
+        # Extract features
+        time = features[:, 0]  # Time elapsed
+        variance = features[:, 1]  # Normalized variance
+        velocity = features[:, 2]  # Normalized velocity
+        acceleration = features[:, 3]  # Normalized acceleration
 
-        # Y Coordinate plot
-        ax_y = export_widget.addPlot(title='Y Coordinate Over Time', row=1, col=0)
-        ax_y.setLabel('left', 'Y Coordinate')
-        ax_y.setLabel('bottom', 'Time (s)')
-        ax_y.plot(time_data, y_data, pen='b')
+        # Variance plot
+        ax_variance = export_widget.addPlot(title="Normalized Variance Over Time")
+        ax_variance.setLabel('left', 'Variance')
+        ax_variance.setLabel('bottom', 'Time (s)')
+        ax_variance.plot(time, variance, pen='r')
+
+        # Velocity plot
+        ax_velocity = export_widget.addPlot(title="Velocity Over Time", row=1, col=0)
+        ax_velocity.setLabel('left', 'Normalized Velocity')
+        ax_velocity.setLabel('bottom', 'Time (s)')
+        ax_velocity.plot(time, velocity, pen='b')
+
+        # Acceleration plot
+        ax_acceleration = export_widget.addPlot(title="Acceleration Over Time", row=2, col=0)
+        ax_acceleration.setLabel('left', 'Acceleration')
+        ax_acceleration.setLabel('bottom', 'Time (s)')
+        ax_acceleration.plot(time, acceleration, pen='g')
 
         # Deception Probability plot
-        ax_prob = export_widget.addPlot(title='Deception Probability Over Time', row=2, col=0)
+        ax_prob = export_widget.addPlot(title="Deception Probability Over Time", row=3, col=0)
         ax_prob.setLabel('left', 'Probability')
         ax_prob.setLabel('bottom', 'Time (s)')
-        ax_prob.plot(time_data, deception_data, pen='g')
-
-        # Scatter plot for 2D gaze points
-        scatter_ax = export_widget.addPlot(title='2D Gaze Points', row=3, col=0)
-        scatter = pg.ScatterPlotItem(x=x_data, y=y_data, pen=None, brush=pg.mkBrush(0, 255, 0, 120))
-        scatter_ax.addItem(scatter)
+        ax_prob.plot(time_data, deception_data, pen='m')
 
         # Export the graph as an image
         screenshot = export_widget.grab()
@@ -49,12 +55,10 @@ def export_graph(time_data, x_data, y_data, deception_data, save_path):
     except Exception as e:
         print(f"Error exporting graph: {e}")
 
-def export_csv(time_data, x_data, y_data, features, deception_data, output_file):
+def export_csv(features, time_data, deception_data, output_file):
     """
     Export gaze data and corresponding deception probabilities to CSV.
     :param time_data: List of time values
-    :param x_data: List of x gaze positions
-    :param y_data: List of y gaze positions
     :param features: Normalized features (variance, velocity, acceleration)
     :param deception_data: Deception probabilities
     :param output_file: Output CSV file path
@@ -65,12 +69,35 @@ def export_csv(time_data, x_data, y_data, features, deception_data, output_file)
 
     with open(output_file, mode='w', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow(['Time', 'X Coordinate', 'Y Coordinate', 'Variance', 'Velocity', 'Fixation', 'Deception Probability']) 
+        writer.writerow(['Time', 'Variance', 'Velocity', 'Acceleration', 'Deception Probability']) 
                          
         for i in range(len(time_data)):
             variance = features[i, 1] if i < len(features) else 0
             velocity = features[i, 2] if i < len(features) else 0
-            fixation = features[i, 3] if i < len(features) else 0
+            acceleration = features[i, 3] if i < len(features) else 0
             deception = deception_data[i] if i < len(deception_data) else None
 
-            writer.writerow([time_data[i], x_data[i], y_data[i], variance, velocity, fixation, deception])
+            writer.writerow([time_data[i], variance, velocity, acceleration, deception])
+
+def export_baseline_csv(features, time_data, output_file):
+    """
+    Export gaze data and corresponding deception probabilities to CSV.
+    :param time_data: List of time values
+    :param features: Normalized features (variance, velocity, acceleration)
+    :param deception_data: Deception probabilities
+    :param output_file: Output CSV file path
+    """
+    if len(time_data) == 0 or len(features) == 0:
+            print("No data to export.")
+            return
+
+    with open(output_file, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Time', 'Variance', 'Velocity', 'Acceleration']) 
+                        
+        for i in range(len(time_data)):
+            variance = features[i, 1] if i < len(features) else 0
+            velocity = features[i, 2] if i < len(features) else 0
+            acceleration = features[i, 3] if i < len(features) else 0
+
+            writer.writerow([time_data[i], variance, velocity, acceleration])
