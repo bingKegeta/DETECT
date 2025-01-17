@@ -12,26 +12,6 @@ def log_summary_statistics(data, label):
     print(f"{label} Summary Statistics:")
     print(f"  Min: {np.min(data):.4f}, Max: {np.max(data):.4f}, Mean: {np.mean(data):.4f}, Std: {np.std(data):.4f}")
 
-def smooth(data, window_size=10):
-    """
-    Smooth data using block averaging.
-    Args:
-        data (np.ndarray): Input data to smooth.
-        window_size (int): Size of the smoothing block.
-    Returns:
-        np.ndarray: Smoothed data.
-    """
-    smoothed_data = data.copy()
-    n_points = len(data)
-
-    # Iterate through the data in blocks
-    for i in range(0, n_points, window_size):
-        block = data[i:i + window_size]  # Extract block
-        block_mean = np.mean(block)  # Compute block average
-        smoothed_data[i:i + window_size] = block_mean  # Set all points in block to average
-
-    return smoothed_data
-
 class TrainingVisualization(QDialog):
     def __init__(self, features, transition_matrix, means, parent=None):
         super().__init__(parent)
@@ -146,7 +126,7 @@ class HiddenMarkovModel:
         print(f"Raw State Probabilities: {raw_probabilities}")
         # print(f"Bounded Probabilities: {bounded_probabilities}")
         
-        return bounded_probabilities
+        return raw_probabilities
 
     def prepare_features(self, x_data, y_data, time_data):
         """
@@ -198,13 +178,27 @@ class HiddenMarkovModel:
         velocity_std = np.std(velocity_trimmed)
         velocity_norm = (velocity_trimmed - velocity_mean) / (velocity_std if velocity_std > 0 else 1)
 
-        acceleration_mean = np.mean(acceleration)
-        acceleration_std = np.std(acceleration)
-        acceleration_norm = (acceleration - acceleration_mean) / (acceleration_std if acceleration_std > 0 else 1)
+        # Robust Normalization for Acceleration
+        # Apply smoothing to reduce noise before normalization
+        window_size = 5  # Adjust based on your data
+        def smooth(data, window_size=5):
+            smoothed = np.convolve(data, np.ones(window_size) / window_size, mode='same')
+            return smoothed
 
-        variance_smooth = smooth(variance_norm)
-        velocity_smooth = smooth(velocity_norm)
-        acceleration_smooth = smooth(acceleration_norm)
+        acceleration_smoothed = np.abs(smooth(acceleration, window_size))
+
+        # Use Median Absolute Deviation (MAD) for robust scaling
+        acceleration_median = np.median(acceleration_smoothed)
+        mad = np.median(np.abs(acceleration_smoothed - acceleration_median))
+        acceleration_norm = (acceleration_smoothed - acceleration_median) / (mad if mad > 0 else 1)
+
+        # acceleration_mean = np.mean(acceleration)
+        # acceleration_std = np.std(acceleration)
+        # acceleration_norm = (acceleration - acceleration_mean) / (acceleration_std if acceleration_std > 0 else 1)
+
+        # variance_smooth = smooth(variance_norm)
+        # velocity_smooth = smooth(velocity_norm)
+        # acceleration_smooth = smooth(acceleration_norm)
 
         # Debug: Log feature statistics
         log_summary_statistics(variance, "Raw Variance")
@@ -215,27 +209,27 @@ class HiddenMarkovModel:
         log_summary_statistics(velocity_norm, "Normalized Velocity")
         log_summary_statistics(acceleration_norm, "Normalized Acceleration")
 
-        log_summary_statistics(variance_smooth, "Smoothed Variance")
-        log_summary_statistics(velocity_smooth, "Smoothed Velocity")
-        log_summary_statistics(acceleration_smooth, "Smoothed Acceleration")
+        # log_summary_statistics(variance_smooth, "Smoothed Variance")
+        # log_summary_statistics(velocity_smooth, "Smoothed Velocity")
+        # log_summary_statistics(acceleration_smooth, "Smoothed Acceleration")
 
         # Align time data to match feature shapes
         aligned_time_data = time_data[2:]  # Shape: (N-2,)
 
         # **Ensure all feature arrays have the same length**
-        assert aligned_time_data.shape[0] == variance_smooth.shape[0] == velocity_smooth.shape[0] == acceleration_smooth.shape[0], \
-            f"Feature lengths do not match: Time({aligned_time_data.shape[0]}), Variance({variance_smooth.shape[0]}), " \
-            f"Velocity({velocity_smooth.shape[0]}), Acceleration({acceleration_smooth.shape[0]})"
+        # assert aligned_time_data.shape[0] == variance_smooth.shape[0] == velocity_smooth.shape[0] == acceleration_smooth.shape[0], \
+        #     f"Feature lengths do not match: Time({aligned_time_data.shape[0]}), Variance({variance_smooth.shape[0]}), " \
+        #     f"Velocity({velocity_smooth.shape[0]}), Acceleration({acceleration_smooth.shape[0]})"
 
         # Stack features together without additional slicing
         features = np.column_stack([
             aligned_time_data,      # Time elapsed
-            variance_smooth,        # Smoothed variance
-            velocity_smooth,        # Smoothed velocity
-            acceleration_smooth     # Smoothed acceleration
+            variance_norm,        # Smoothed variance
+            velocity_norm,        # Smoothed velocity
+            acceleration_norm     # Smoothed acceleration
         ])  # Shape: (N-2, 4)
 
         # Debug: Print prepared features
-        print(f"Prepared Smoothed Features: {features}")
+        # print(f"Prepared Smoothed Features: {features}")
 
         return features
