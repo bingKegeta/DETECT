@@ -1,3 +1,4 @@
+
 # HMM Branch - Hidden Markov Model for Deception Detection
 
 ## Overview
@@ -24,9 +25,10 @@ This branch introduces a Hidden Markov Model (HMM) for detecting deception based
 ```json
 {
   "source": "video",
-  "path": "test_media/session_video.mp4",
   "baseline_video": "test_media/baseline_video.mp4",
   "baseline_csv": "exports/baseline.csv",
+  "session_video": "test_media/session_video.mp4",
+  "session_csv": "exports/session.csv",
   "export": {
     "csv": true,
     "graph": true,
@@ -42,7 +44,6 @@ This branch introduces a Hidden Markov Model (HMM) for detecting deception based
 }
 ```
 
-
 ## `config.json` Parameters
 
 The `config.json` file contains configuration options for running the application. Below is a breakdown of the parameters:
@@ -53,7 +54,9 @@ The `config.json` file contains configuration options for running the applicatio
   - `"video"`: Uses a video file for analysis.
   - `"image"`: Uses an image file for analysis.
 
-- **`path`**: Path to the session video or image file to be processed (e.g., `"test_media/session_video.mp4"`).
+### Session Parameters
+- **`session_video`**: Path to the session video file. If provided, this video will be processed to compute gaze data and deception probabilities.
+- **`session_csv`**: Path to an existing session CSV file. If provided, it will be used directly for analysis instead of processing a session video.
 
 ### Baseline Parameters
 - **`baseline`**: (`true`/`false`) Indicates whether baseline data is used for training the HMM model.
@@ -74,9 +77,8 @@ The `config.json` file contains configuration options for running the applicatio
 - **`graph`**: (`true`/`false`) Displays real-time graphs of gaze data during processing.
 - **`affine`**: (`true`/`false`) Applies affine transformations to stabilize gaze coordinates.
 
-### Session Parameters
+### CSV Interval
 - **`csv_interval`**: Interval (in seconds) for saving gaze data to the CSV file.
-- **`baseline`**: (`true`/`false`) Enables baseline processing and model training using either `baseline_video` or `baseline_csv`.
 
 ## Updated Files
 1. **`main.py`**: Manages the overall flow, baseline setup, and session processing.

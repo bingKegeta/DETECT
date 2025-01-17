@@ -1,36 +1,7 @@
-from cv2 import log
 from hmmlearn import hmm
 import numpy as np
 from PyQt5.QtWidgets import QVBoxLayout, QDialog
 import pyqtgraph as pg
-from src.export import export_training_graph
-import os
-
-
-def log_summary_statistics(data, label):
-    """Logs summary statistics for a dataset."""
-    print(f"{label} Summary Statistics:")
-    print(f"  Min: {np.min(data):.4f}, Max: {np.max(data):.4f}, Mean: {np.mean(data):.4f}, Std: {np.std(data):.4f}")
-
-def smooth(data, window_size=10):
-    """
-    Smooth data using block averaging.
-    Args:
-        data (np.ndarray): Input data to smooth.
-        window_size (int): Size of the smoothing block.
-    Returns:
-        np.ndarray: Smoothed data.
-    """
-    smoothed_data = data.copy()
-    n_points = len(data)
-
-    # Iterate through the data in blocks
-    for i in range(0, n_points, window_size):
-        block = data[i:i + window_size]  # Extract block
-        block_mean = np.mean(block)  # Compute block average
-        smoothed_data[i:i + window_size] = block_mean  # Set all points in block to average
-
-    return smoothed_data
 
 class TrainingVisualization(QDialog):
     def __init__(self, features, transition_matrix, means, parent=None):
@@ -49,20 +20,20 @@ class TrainingVisualization(QDialog):
         self.plot_transition_matrix(transition_matrix, means)
 
     def plot_features(self, features):
-        # Assuming features are in the format [time, variance, velocity, fixation]
+        # Assuming features are in the format [time, variance, velocity, acceleration]
         time = features[:, 0]
         variance = features[:, 1]
         velocity = features[:, 2]
         acceleration = features[:, 3]
 
-        p1 = self.win.addPlot(title="Variance Over Time")
+        p1 = self.win.addPlot(title="Normalized Variance Over Time")
         p1.plot(time, variance, pen='r')
-        p1.setLabel('left', "Variance")
+        p1.setLabel('left', "Normalized Variance")
         p1.setLabel('bottom', "Time (s)")
 
-        p2 = self.win.addPlot(title="Velocity Over Time", row=1, col=0)
+        p2 = self.win.addPlot(title="Normalized Velocity Over Time", row=1, col=0)
         p2.plot(time, velocity, pen='b')
-        p2.setLabel('left', "Velocity")
+        p2.setLabel('left', "Normalized Velocity")
         p2.setLabel('bottom', "Time (s)")
 
         p3 = self.win.addPlot(title="Acceleration Over Time", row=2, col=0)
@@ -80,23 +51,18 @@ class TrainingVisualization(QDialog):
 
         # Display means as annotations
         for i, mean in enumerate(means):
-            text = pg.TextItem(f"State {i} Mean: {mean}", anchor=(0, 1))
-            text.setPos(i, i)
-            p4.addItem(text)
+            p4.setLabel('right', f"State {i} Mean: {mean}")
 
 class HiddenMarkovModel:
     def __init__(self):
         self.model = hmm.GaussianHMM(n_components=2, covariance_type="diag", init_params='')  # Disable reinitialization
 
-    def train(self, features):
+    def train(self, x_data, y_data, time_data):
         """Train HMM using normalized and prepared features."""
-        # Debug: Log feature statistics
-        print(f"Feature Stats Before Training:")
-        print(f"Mean: {np.mean(features, axis=0)}, Std: {np.std(features, axis=0)}")
+        features = self.prepare_features(x_data, y_data, time_data)
 
         # Initialize transition matrix
-        self.model.transmat_ = np.array([[0.9, 0.1], [0.8, 0.2]])
-        print(f"Initial Transition Matrix: {self.model.transmat_}")
+        self.model.transmat_ = np.array([[0.9, 0.1], [0.3, 0.7]])
 
         # Initialize means and covariances
         baseline_mean = np.mean(features, axis=0)
@@ -114,14 +80,11 @@ class HiddenMarkovModel:
         if not hasattr(self.model, 'startprob_'):
             self.model.startprob_ = np.array([0.5, 0.5])
 
-        print(f"Initialized Means: {self.model.means_}")
-        
         # Train the HMM
         self.model.fit(features)
         print("HMM training completed successfully!")
 
         # Debug information
-        print(f"Features: {features.shape}")
         print(f"Transition Matrix:\n{self.model.transmat_}")
         print(f"Means:\n{self.model.means_}")
         print(f"Covariances:\n{self.model.covars_}")
@@ -131,7 +94,6 @@ class HiddenMarkovModel:
 
     def visualize_training(self, features, transition_matrix, means):
         """Launch training visualization."""
-        export_training_graph(features, transition_matrix, means, os.path.join("./exports", "baseline.png"))
         self.training_window = TrainingVisualization(features, transition_matrix, means)
         self.training_window.exec_()  # Show as a modal dialog
 
@@ -142,10 +104,9 @@ class HiddenMarkovModel:
 
         # Apply bounds to avoid hard 0 or 1 probabilities
         bounded_probabilities = np.clip(raw_probabilities, 0.05, 0.95)
-        # print(f"Input Feature: {feature}")
+        print(f"Input Feature: {feature}")
         print(f"Raw State Probabilities: {raw_probabilities}")
-        # print(f"Bounded Probabilities: {bounded_probabilities}")
-        
+        print(f"Bounded Probabilities: {bounded_probabilities}")
         return bounded_probabilities
 
     def prepare_features(self, x_data, y_data, time_data):
@@ -155,7 +116,7 @@ class HiddenMarkovModel:
         - Time elapsed
         - Normalized variance of gaze positions
         - Normalized velocity of gaze movement
-        - Normalized acceleration (derivative of velocity)
+        - Acceleration of gaze movement
         """
         # Convert inputs to NumPy arrays if they aren't already
         x_data = np.asarray(x_data)
@@ -166,6 +127,10 @@ class HiddenMarkovModel:
             raise ValueError("Not enough data points for feature extraction.")
 
         # Compute variance over sliding windows of size 2
+        # Ensure there are enough data points for sliding_window_view
+        if len(x_data) < 2 or len(y_data) < 2:
+            raise ValueError("Not enough data points for variance computation.")
+
         sliding_x = np.lib.stride_tricks.sliding_window_view(x_data, window_shape=2)
         sliding_y = np.lib.stride_tricks.sliding_window_view(y_data, window_shape=2)
         variance_x = np.var(sliding_x, axis=1)
@@ -176,66 +141,41 @@ class HiddenMarkovModel:
         delta_x = np.diff(x_data)  # Shape: (N-1,)
         delta_y = np.diff(y_data)  # Shape: (N-1,)
         delta_time = np.diff(time_data)  # Shape: (N-1,)
-
+        
+        # Prevent division by zero in velocity computation
         with np.errstate(divide='ignore', invalid='ignore'):
             velocity = np.sqrt(delta_x**2 + delta_y**2) / delta_time  # Shape: (N-1,)
             velocity = np.nan_to_num(velocity)  # Replace NaNs and infs with 0
 
-        # Compute acceleration (derivative of velocity)
-        acceleration = np.diff(velocity) / np.diff(time_data[:-1])  # Shape: (N-2,)
-        acceleration = np.nan_to_num(acceleration)  # Replace NaNs and infs with 0
+        # Compute acceleration
+        # np.diff(velocity) has shape (N-2,)
+        # np.diff(time_data[1:]) also has shape (N-2,)
+        delta_velocity = np.diff(velocity)  # Shape: (N-2,)
+        delta_time_velocity = np.diff(time_data[1:])  # Shape: (N-2,)
+        
+        # Prevent division by zero in acceleration computation
+        with np.errstate(divide='ignore', invalid='ignore'):
+            acceleration = delta_velocity / delta_time_velocity  # Shape: (N-2,)
+            acceleration = np.nan_to_num(acceleration)  # Replace NaNs and infs with 0
 
-        # Normalize variance, velocity, and acceleration using Standard Z-Score Normalization
+        # Normalize features
+        # Adjust variance and velocity to match the shape of acceleration (N-2,)
         variance_trimmed = variance[:-1]  # Shape: (N-2,)
         velocity_trimmed = velocity[:-1]  # Shape: (N-2,)
 
-        # Standard Z-Score Normalization
-        variance_mean = np.mean(variance_trimmed)
-        variance_std = np.std(variance_trimmed)
-        variance_norm = (variance_trimmed - variance_mean) / (variance_std if variance_std > 0 else 1)
+        variance_max = np.max(variance_trimmed)
+        variance_norm = variance_trimmed / variance_max if variance_max > 0 else variance_trimmed  # Shape: (N-2,)
 
-        velocity_mean = np.mean(velocity_trimmed)
-        velocity_std = np.std(velocity_trimmed)
-        velocity_norm = (velocity_trimmed - velocity_mean) / (velocity_std if velocity_std > 0 else 1)
+        velocity_max = np.max(velocity_trimmed)
+        velocity_norm = velocity_trimmed / velocity_max if velocity_max > 0 else velocity_trimmed  # Shape: (N-2,)
 
-        acceleration_mean = np.mean(acceleration)
-        acceleration_std = np.std(acceleration)
-        acceleration_norm = (acceleration - acceleration_mean) / (acceleration_std if acceleration_std > 0 else 1)
+        acceleration_max = np.max(np.abs(acceleration))
+        acceleration_norm = acceleration / acceleration_max if acceleration_max > 0 else acceleration  # Shape: (N-2,)
 
-        variance_smooth = smooth(variance_norm)
-        velocity_smooth = smooth(velocity_norm)
-        acceleration_smooth = smooth(acceleration_norm)
-
-        # Debug: Log feature statistics
-        log_summary_statistics(variance, "Raw Variance")
-        log_summary_statistics(velocity, "Raw Velocity")
-        log_summary_statistics(acceleration, "Raw Acceleration")
-
-        log_summary_statistics(variance_norm, "Normalized Variance")
-        log_summary_statistics(velocity_norm, "Normalized Velocity")
-        log_summary_statistics(acceleration_norm, "Normalized Acceleration")
-
-        log_summary_statistics(variance_smooth, "Smoothed Variance")
-        log_summary_statistics(velocity_smooth, "Smoothed Velocity")
-        log_summary_statistics(acceleration_smooth, "Smoothed Acceleration")
-
-        # Align time data to match feature shapes
+        # Align time data to match the shape of acceleration
         aligned_time_data = time_data[2:]  # Shape: (N-2,)
 
-        # **Ensure all feature arrays have the same length**
-        assert aligned_time_data.shape[0] == variance_smooth.shape[0] == velocity_smooth.shape[0] == acceleration_smooth.shape[0], \
-            f"Feature lengths do not match: Time({aligned_time_data.shape[0]}), Variance({variance_smooth.shape[0]}), " \
-            f"Velocity({velocity_smooth.shape[0]}), Acceleration({acceleration_smooth.shape[0]})"
-
-        # Stack features together without additional slicing
-        features = np.column_stack([
-            aligned_time_data,      # Time elapsed
-            variance_smooth,        # Smoothed variance
-            velocity_smooth,        # Smoothed velocity
-            acceleration_smooth     # Smoothed acceleration
-        ])  # Shape: (N-2, 4)
-
-        # Debug: Print prepared features
-        print(f"Prepared Smoothed Features: {features}")
+        # Stack the features together
+        features = np.column_stack([aligned_time_data, variance_norm, velocity_norm, acceleration_norm])  # Shape: (N-2, 4)
 
         return features

@@ -1,25 +1,15 @@
 import csv
-from statistics import variance
-import numpy as np
 
-def load_features_data(file_path):
+def load_baseline_data(file_path):
     """Load baseline CSV data and return x, y, and time arrays."""
-    variance, velocity, acceleration, time_data = [], [], [], []
+    x_data, y_data, time_data = [], [], []
     with open(file_path, 'r') as file:
         reader = csv.DictReader(file)
         for row in reader:
-            variance.append(float(row['Variance']))
-            velocity.append(float(row['Velocity']))
-            acceleration.append(float(row['Acceleration']))
+            x_data.append(float(row['X Coordinate']))
+            y_data.append(float(row['Y Coordinate']))
             time_data.append(float(row['Time']))
-
-        features = np.column_stack([
-            time_data,
-            variance,
-            velocity,
-            acceleration
-        ])
-    return features
+    return x_data, y_data, time_data
 
 def HorizontalRegion(x: float) -> str:
     if x < 0.033:

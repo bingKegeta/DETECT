@@ -1,4 +1,5 @@
 from pyexpat import features
+import re
 import cv2
 import time
 import numpy as np
@@ -10,9 +11,9 @@ from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import QTimer, Qt
 from src.args import load_config
 from src.process import process_frame, process_baseline_video
-from src.export import export_csv, export_graph, export_baseline_csv
+from src.export import export_csv, export_graph, export_features_csv
 from src.graph import plot_final_graphs    
-from src.utils import load_baseline_data
+from src.utils import load_features_data
 from src.hmm import HiddenMarkovModel
 import warnings
 
@@ -103,6 +104,7 @@ class GazeTrackingApp(QWidget):
         try:
             # Process features and deception probabilities
             features = self.hmm.prepare_features(self.x_data, self.y_data, self.time_data)
+            export_features_csv(features, self.time_data, os.path.join(self.config["export_dir"], "session.csv"))
 
             # Predict deception probabilities for the entire session
             probabilities = [self.hmm.predict_proba(f.reshape(1, -1))[0][1] for f in features]
@@ -148,7 +150,6 @@ class GazeTrackingApp(QWidget):
         QApplication.quit()
         print("Application closed successfully.")
 
-
     def cleanup(self):
         """Release the webcam and close all windows."""
         if self.cap:
@@ -176,26 +177,29 @@ def main():
         print(f"Error loading configuration: {e}")
         return
     
+    fps = 0
+    cap = None
+    session_csv_path = None
+    session_video_path = None
+
     # Initialize video capture based on the configuration
     if config['source'] == 'webcam':
         cap = cv2.VideoCapture(0)
         fps = 30  # Assume default FPS for webcam input
     elif config['source'] in ['image', 'video']:
-        if not config['path']:
-            print("Error: 'path' field is required in the configuration when 'source' is 'image' or 'video'.")
-            return
-        cap = cv2.VideoCapture(config['path'])
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        if fps == 0 or fps is None:
-            print("Warning: Unable to determine FPS from video. Defaulting to 30.")
-            fps = 30  # Default FPS if unable to get from video source
+        # Handle session setup
+        session_video_path = config.get("session_video", None)
+        session_csv_path = config.get("session_csv", None)
+        if session_video_path:
+            # Process session video
+            print(f"Processing session video: {session_video_path}")
+            cap = cv2.VideoCapture(session_video_path)
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            if fps == 0 or fps is None:
+                print("Warning: Unable to determine FPS from video. Defaulting to 30.")
+                fps = 30  # Default FPS if unable to get from video source
     else:
         print("Error: Invalid source type provided in the configuration. Use 'webcam', 'image', or 'video'.")
-        return
-
-    # Check if video capture is initialized
-    if not cap.isOpened():
-        print("Error: Unable to open video source. Check the camera index or file path.")
         return
 
     # Initialize the QApplication
@@ -203,10 +207,17 @@ def main():
 
     # Create main window for gaze tracking
     gaze_window = GazeTrackingApp(config, fps)
-    gaze_window.cap = cap
-    gaze_window.resize(1280, 720)  # Set a reasonable starting size for the gaze window
-    gaze_window.show()
 
+    if config['source'] == 'webcam' or session_video_path:
+        gaze_window.cap = cap
+        gaze_window.resize(1280, 720)  # Set a reasonable starting size for the gaze window
+        gaze_window.show()
+
+        # Check if video capture is initialized
+        if not cap.isOpened():
+            print("Error: Unable to open video source. Check the camera index or file path.")
+            return
+    
     # Initialize the HMM for deception detection
     gaze_window.hmm = HiddenMarkovModel()
 
@@ -217,7 +228,7 @@ def main():
 
         if baseline_csv_path:
             print(f"Loading baseline CSV from: {baseline_csv_path}")
-            features = load_baseline_data(baseline_csv_path)
+            features = load_features_data(baseline_csv_path)
             gaze_window.hmm.train(features)
             print("HMM training completed using baseline CSV data.")
         elif baseline_video_path:
@@ -225,54 +236,82 @@ def main():
             baseline_x, baseline_y, baseline_time = process_baseline_video(baseline_video_path)
             features = gaze_window.hmm.prepare_features(baseline_x, baseline_y, baseline_time)
             gaze_window.hmm.train(features)
-            export_baseline_csv(features, baseline_time, os.path.join(config["export_dir"], "baseline.csv"))
+            export_features_csv(features, baseline_time, os.path.join(config["export_dir"], "baseline.csv"))
             print("HMM training completed using processed baseline video data.")
         else:
             print("Error: Baseline enabled but no path provided for baseline CSV or video.")
             return
 
-    # Create a separate window for the webcam feed
-    gaze_window.webcam_window = WebcamWindow()  # Store the webcam window in the gaze_window
-    gaze_window.webcam_window.show()
+    if session_csv_path:
+        # Load session CSV directly
+        print(f"Loading session CSV from: {session_csv_path}")
+        features = load_features_data(session_csv_path)
+        # Predict deception probabilities for the entire session
+        deception_data = [gaze_window.hmm.predict_proba(f.reshape(1, -1))[0][1] for f in features]
+        time_data = features[:, 0]
+        
+        # Export CSV and graph
+        if config['export']['csv'] or config['export']['graph']:
+            if not os.path.exists(config['export_dir']):
+                os.makedirs(config['export_dir'], exist_ok=True)
 
-    def update_frame():
-        if not gaze_window.paused:
-            ret, frame = gaze_window.cap.read()
-            if not ret:
-                gaze_window.cap.release()
-                return
+        if config['export']['csv']:
+            csv_path = os.path.join(config['export_dir'], "gaze_data.csv")
+            export_csv(features, time_data, deception_data, csv_path)
+            print(f"CSV file saved to: {csv_path}")
 
-            # Process the frame and update gaze data
-            try:
-                stabilized_frame, iris_detected = process_frame(
-                    frame, gaze_window.x_data, gaze_window.y_data,
-                    config['affine'], config['dot_display'], config['categorize']
-                )
+        if config['export']['graph']:
+            graph_path = os.path.join(config['export_dir'], "final_comprehensive_plots.png")
+            export_graph(features, time_data, deception_data, graph_path)
+        print("Session processing completed using session CSV.")
+        return
+    
+    elif session_video_path:
+        # Create a separate window for the webcam feed
+        gaze_window.webcam_window = WebcamWindow()  # Store the webcam window in the gaze_window
+        gaze_window.webcam_window.show()
+
+        def update_frame():
+            if not gaze_window.paused:
+                ret, frame = gaze_window.cap.read()
+                if not ret:
+                    gaze_window.cap.release()
+                    return
+
+                # Process the frame and update gaze data
+                try:
+                    stabilized_frame, iris_detected = process_frame(
+                        frame, gaze_window.x_data, gaze_window.y_data,
+                        config['affine'], config['dot_display'], config['categorize']
+                    )
+                    
+                    # Only update plots if eyes are detected
+                    if iris_detected:
+                        # Use FPS and frame count to calculate timestamp
+                        current_time = gaze_window.frame_count / gaze_window.fps
+                        gaze_window.time_data.append(current_time)
+                        gaze_window.frame_count += 1  # Increment frame counter
+                            
+                        # Update plots with new gaze data
+                        gaze_window.x_curve.setData(gaze_window.time_data, gaze_window.x_data)
+                        gaze_window.y_curve.setData(gaze_window.time_data, gaze_window.y_data)
+                        gaze_window.scatter.setData(gaze_window.x_data, gaze_window.y_data)
+
+                    # Display the processed frame (regardless of iris detection)
+                    gaze_window.webcam_window.update_video(stabilized_frame)
                 
-                # Only update plots if eyes are detected
-                if iris_detected:
-                    # Use FPS and frame count to calculate timestamp
-                    current_time = gaze_window.frame_count / gaze_window.fps
-                    gaze_window.time_data.append(current_time)
-                    gaze_window.frame_count += 1  # Increment frame counter
-                        
-                    # Update plots with new gaze data
-                    gaze_window.x_curve.setData(gaze_window.time_data, gaze_window.x_data)
-                    gaze_window.y_curve.setData(gaze_window.time_data, gaze_window.y_data)
-                    gaze_window.scatter.setData(gaze_window.x_data, gaze_window.y_data)
+                except Exception as e:
+                    print(f"Error processing frame: {e}")
 
-                # Display the processed frame (regardless of iris detection)
-                gaze_window.webcam_window.update_video(stabilized_frame)
-            
-            except Exception as e:
-                print(f"Error processing frame: {e}")
+        # Set up a timer to call update_frame at regular intervals
+        timer = QTimer()
+        timer.timeout.connect(update_frame)
+        timer.start(30)  # Adjust interval to control the update frequency
 
-    # Set up a timer to call update_frame at regular intervals
-    timer = QTimer()
-    timer.timeout.connect(update_frame)
-    timer.start(30)  # Adjust interval to control the update frequency
-
-    sys.exit(app.exec_())
+        sys.exit(app.exec_())
+    else:
+        print("Error: No session video or session CSV specified in the configuration.")
+        return
 
 if __name__ == "__main__":
     print("Starting gaze tracking application...")

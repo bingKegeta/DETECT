@@ -1,5 +1,4 @@
 import argparse
-from calendar import c
 import json
 import os
 
@@ -50,19 +49,15 @@ def load_config(json_file_path):
         raise ValueError("Invalid value for 'source'. Must be 'webcam', 'image', or 'video'.")
     
     # Handle optional fields with defaults
-    config.setdefault('session_video', None)
-    config.setdefault('session_csv', None)
-    config.setdefault('baseline', False)
-    config.setdefault('baseline_video', None)
-    config.setdefault('baseline_csv', None)
+    config.setdefault('path', None)
     config.setdefault('graph', True)
     config.setdefault('affine', False)
     config.setdefault('csv_interval', 1.0)
     config.setdefault('categorize', False)
     
     # If source is not 'webcam', 'path' is required
-    if config['source'] != 'webcam' and not config['session_video'] and not config['session_csv']:
-        raise ValueError("The 'session_video' or 'session_csv' field is required when 'source' is not 'webcam'.")
+    if config['source'] != 'webcam' and not config['path']:
+        raise ValueError("The 'path' field is required when 'source' is not 'webcam'.")
     
     # If dot display is not given
     if 'dot_display' not in config:

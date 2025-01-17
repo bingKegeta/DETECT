@@ -25,7 +25,7 @@ def export_graph(features, time_data, deception_data, save_path):
         acceleration = features[:, 3]  # Normalized acceleration
 
         # Variance plot
-        ax_variance = export_widget.addPlot(title="Normalized Variance Over Time")
+        ax_variance = export_widget.addPlot(title="Variance Over Time")
         ax_variance.setLabel('left', 'Variance')
         ax_variance.setLabel('bottom', 'Time (s)')
         ax_variance.plot(time, variance, pen='r')
@@ -79,7 +79,7 @@ def export_csv(features, time_data, deception_data, output_file):
 
             writer.writerow([time_data[i], variance, velocity, acceleration, deception])
 
-def export_baseline_csv(features, time_data, output_file):
+def export_features_csv(features, time_data, output_file):
     """
     Export gaze data and corresponding deception probabilities to CSV.
     :param time_data: List of time values
@@ -101,3 +101,51 @@ def export_baseline_csv(features, time_data, output_file):
             acceleration = features[i, 3] if i < len(features) else 0
 
             writer.writerow([time_data[i], variance, velocity, acceleration])
+
+def export_training_graph(features, transition_matrix, means, save_path):
+    """
+    Export training visualization graph (variance, velocity, acceleration, and transition matrix).
+    :param features: Array of features [time, variance, velocity, acceleration].
+    :param transition_matrix: HMM transition matrix.
+    :param means: HMM state means.
+    :param save_path: Path to save the graph image.
+    """
+
+    try:
+        # Ensure export directory exists
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+        # Create an exportable plot widget
+        export_widget = pg.GraphicsLayoutWidget(show=False)
+        export_widget.resize(800, 600)
+
+        # Extract features
+        time = features[:, 0]  # Time elapsed
+        variance = features[:, 1]  # Normalized variance
+        velocity = features[:, 2]  # Normalized velocity
+        acceleration = features[:, 3]  # Normalized acceleration
+
+        # Variance plot
+        ax_variance = export_widget.addPlot(title="Variance Over Time")
+        ax_variance.setLabel('left', 'Variance')
+        ax_variance.setLabel('bottom', 'Time (s)')
+        ax_variance.plot(time, variance, pen='r')
+
+        # Velocity plot
+        ax_velocity = export_widget.addPlot(title="Velocity Over Time", row=1, col=0)
+        ax_velocity.setLabel('left', 'Normalized Velocity')
+        ax_velocity.setLabel('bottom', 'Time (s)')
+        ax_velocity.plot(time, velocity, pen='b')
+
+        # Acceleration plot
+        ax_acceleration = export_widget.addPlot(title="Acceleration Over Time", row=2, col=0)
+        ax_acceleration.setLabel('left', 'Acceleration')
+        ax_acceleration.setLabel('bottom', 'Time (s)')
+        ax_acceleration.plot(time, acceleration, pen='g')
+
+        # Export the graph as an image
+        screenshot = export_widget.grab()
+        screenshot.save(save_path, 'PNG')
+        print(f"Graph image saved to: {save_path}")
+    except Exception as e:
+        print(f"Error exporting graph: {e}")
