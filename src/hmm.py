@@ -10,7 +10,7 @@ import os
 def log_summary_statistics(data, label):
     """Logs summary statistics for a dataset."""
     print(f"{label} Summary Statistics:")
-    print(f"  Min: {np.min(data):.4f}, Max: {np.max(data):.4f}, Mean: {np.mean(data):.4f}, Std: {np.std(data):.4f}")
+    print(f"  Min: {np.min(data):.8f}, Max: {np.max(data):.8f}, Mean: {np.mean(data):.8f}, Std: {np.std(data):.8f}")
 
 class TrainingVisualization(QDialog):
     def __init__(self, features, transition_matrix, means, parent=None):
@@ -71,39 +71,44 @@ class HiddenMarkovModel:
     def train(self, features):
         """Train HMM using normalized and prepared features."""
         # Debug: Log feature statistics
+        # Remove the time column (assumed to be the first column)
+        features_t = features[:, 1:]  # Retain only variance, velocity, and acceleration
+
         print(f"Feature Stats Before Training:")
-        print(f"Mean: {np.mean(features, axis=0)}, Std: {np.std(features, axis=0)}")
+        print(f"Mean: {np.mean(features_t, axis=0)}, Std: {np.std(features_t, axis=0)}")
 
         # Initialize transition matrix
-        self.model.transmat_ = np.array([[0.9, 0.1], [0.8, 0.2]])
+        self.model.transmat_ = np.array([[0.6, 0.4], [0.4, 0.6]])
         print(f"Initial Transition Matrix: {self.model.transmat_}")
 
         # Initialize means and covariances
-        baseline_mean = np.mean(features, axis=0)
-        baseline_std = np.std(features, axis=0)
+        baseline_mean = np.mean(features_t, axis=0)
+        baseline_std = np.std(features_t, axis=0)
+
         self.model.means_ = np.array([
             baseline_mean,  # State 0: Baseline behavior
-            baseline_mean + 2 * baseline_std  # State 1: Deviations (abnormal behavior)
+            baseline_mean + 2 * baseline_std  # State 1: Deviations (spike)
         ])
+
         self.model.covars_ = np.array([
-            baseline_std**2,  # Variance for state 0
-            (2 * baseline_std)**2  # Variance for state 1
+            baseline_std ** 2,  # State 0: Diagonal covariance matrix
+            (2 * baseline_std) ** 2  # State 1: Diagonal covariance matrix
         ])
 
         # Initialize start probabilities if not set
         if not hasattr(self.model, 'startprob_'):
             self.model.startprob_ = np.array([0.5, 0.5])
 
-        print(f"Initialized Means: {self.model.means_}")
+        # print(f"Initialized Means: {self.model.means_}")
         
         # Train the HMM
-        self.model.fit(features)
+        self.model.fit(features_t)
         print("HMM training completed successfully!")
 
         # Debug information
-        print(f"Features: {features.shape}")
+        print(f"Features: {features_t.shape}")
         print(f"Transition Matrix:\n{self.model.transmat_}")
-        print(f"Means:\n{self.model.means_}")
+        # print(f"Means:\n{self.model.means_}")
         print(f"Covariances:\n{self.model.covars_}")
 
         # Show training visualization
@@ -115,15 +120,18 @@ class HiddenMarkovModel:
         self.training_window = TrainingVisualization(features, transition_matrix, means)
         self.training_window.exec_()  # Show as a modal dialog
 
-    def predict_proba(self, feature_vector):
+    def predict_proba(self, features):
         """Predict deception probability for new data."""
-        feature = np.array(feature_vector).reshape(1, -1)  # Ensure it's (1,4)
-        raw_probabilities = self.model.predict_proba(feature)
+        # Remove the time column (assumed to be the first column)
+        features = features[:, 1:]  # Retain only variance, velocity, and acceleration
+
+        features = np.array(features).reshape(1, -1)  # Ensure it's (1,3)
+        raw_probabilities = self.model.predict_proba(features)
 
         # Apply bounds to avoid hard 0 or 1 probabilities
         bounded_probabilities = np.clip(raw_probabilities, 0.05, 0.95)
         # print(f"Input Feature: {feature}")
-        print(f"Raw State Probabilities: {raw_probabilities}")
+        # print(f"Raw State Probabilities: {raw_probabilities}")
         # print(f"Bounded Probabilities: {bounded_probabilities}")
         
         return raw_probabilities
@@ -187,14 +195,14 @@ class HiddenMarkovModel:
 
         acceleration_smoothed = np.abs(smooth(acceleration, window_size))
 
-        # Use Median Absolute Deviation (MAD) for robust scaling
-        acceleration_median = np.median(acceleration_smoothed)
-        mad = np.median(np.abs(acceleration_smoothed - acceleration_median))
-        acceleration_norm = (acceleration_smoothed - acceleration_median) / (mad if mad > 0 else 1)
+        # # Use Median Absolute Deviation (MAD) for robust scaling
+        # acceleration_median = np.median(acceleration_smoothed)
+        # mad = np.median(np.abs(acceleration_smoothed - acceleration_median))
+        # acceleration_norm = (acceleration_smoothed - acceleration_median) / (mad if mad > 0 else 1)
 
-        # acceleration_mean = np.mean(acceleration)
-        # acceleration_std = np.std(acceleration)
-        # acceleration_norm = (acceleration - acceleration_mean) / (acceleration_std if acceleration_std > 0 else 1)
+        acceleration_mean = np.mean(acceleration_smoothed)
+        acceleration_std = np.std(acceleration_smoothed)
+        acceleration_norm = (acceleration_smoothed - acceleration_mean) / (acceleration_std if acceleration_std > 0 else 1)
 
         # variance_smooth = smooth(variance_norm)
         # velocity_smooth = smooth(velocity_norm)

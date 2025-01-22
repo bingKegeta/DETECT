@@ -1,10 +1,10 @@
 {
   "source": "video",
-  "session_video": null,
-  "session_csv": "exports/session.csv",
+  "session_video": "test_media/highVelocity.mp4",
+  "session_csv": null,
   "baseline": true,
-  "baseline_video": null,
-  "baseline_csv": "exports/baseline.csv",
+  "baseline_video": "test_media/baseline_video.mp4",
+  "baseline_csv": null,
   "export": {
     "csv": true,
     "graph": true,

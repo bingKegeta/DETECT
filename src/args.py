@@ -92,11 +92,11 @@ def load_config(json_file_path):
                     return
             
             # Generate paths if the corresponding export option is true
-            if export_options['csv']:
-                config['csv'] = os.path.join(export_dir, "raw_data.csv")
-                print(f"CSV export will be saved to: {config['csv']}")
-            else:
-                config['csv'] = None  # No CSV export
+            # if export_options['csv']:
+            #     config['csv'] = os.path.join(export_dir, "raw_data.csv")
+            #     print(f"CSV export will be saved to: {config['csv']}")
+            # else:
+            #     config['csv'] = None  # No CSV export
 
             if export_options['graph']:
                 config['graph_out'] = os.path.join(export_dir, "final_comprehensive_plots.png")
