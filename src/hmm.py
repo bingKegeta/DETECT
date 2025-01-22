@@ -83,6 +83,12 @@ class HiddenMarkovModel:
 
     def train(self, features):
         """Train HMM using normalized and prepared features."""
+
+        feature = np.array(features).reshape(1, -1)  # Ensure it's (1,4)
+
+        # Remove the time column (assumed to be the first column)
+        features = features[:, 1:]  # Retain only variance, velocity, and acceleration
+
         # Debug: Log feature statistics
         print(f"Feature Stats Before Training:")
         print(f"Mean: {np.mean(features, axis=0)}, Std: {np.std(features, axis=0)}")
@@ -120,7 +126,7 @@ class HiddenMarkovModel:
         print(f"Covariances:\n{self.model.covars_}")
 
         # Show training visualization
-        self.visualize_training(features, self.model.transmat_, self.model.means_)
+        self.visualize_training(feature, self.model.transmat_, self.model.means_)
 
     def visualize_training(self, features, transition_matrix, means):
         """Launch training visualization."""
@@ -131,12 +137,13 @@ class HiddenMarkovModel:
     def predict_proba(self, feature_vector):
         """Predict deception probability for new data."""
         feature = np.array(feature_vector).reshape(1, -1)  # Ensure it's (1,4)
-        raw_probabilities = self.model.predict_proba(feature)
+        features = feature[:, 1:]  # Retain only variance, velocity, and acceleration
+        raw_probabilities = self.model.predict_proba(features)
 
         # Apply bounds to avoid hard 0 or 1 probabilities
         bounded_probabilities = np.clip(raw_probabilities, 0.05, 0.95)
         # print(f"Input Feature: {feature}")
-        print(f"Raw State Probabilities: {raw_probabilities}")
+        # print(f"Raw State Probabilities: {raw_probabilities}")
         # print(f"Bounded Probabilities: {bounded_probabilities}")
         
         return raw_probabilities
