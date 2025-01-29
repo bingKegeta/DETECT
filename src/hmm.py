@@ -1,29 +1,20 @@
-from cv2 import log
-from hmmlearn import hmm
+import copy
 import numpy as np
+from hmmlearn.hmm import GMMHMM
 from PyQt5.QtWidgets import QVBoxLayout, QDialog
 import pyqtgraph as pg
-from src.export import export_training_graph
 import os
 
+from src.export import export_training_graph, export_gmm_states_before_after
 
 def log_summary_statistics(data, label):
     """Logs summary statistics for a dataset."""
     print(f"{label} Summary Statistics:")
-    print(f"  Min: {np.min(data):.4f}, Max: {np.max(data):.4f}, Mean: {np.mean(data):.4f}, Std: {np.std(data):.4f}")
-
-def smooth(data, window_size=5):
-    """
-    Smooth data using block averaging.
-    Args:
-        data (np.ndarray): Input data to smooth.
-        window_size (int): Size of the smoothing block.
-    Returns:
-        np.ndarray: Smoothed data.
-    """
-    smoothed_data = np.convolve(data, np.ones(window_size) / window_size, mode='same')
-
-    return smoothed_data
+    print(f"  Min: {np.min(data):.4f}, Max: {np.max(data):.4f}, Mean: {np.mean(data):.4f}, Median: {np.median(data):.4f}, Std: {np.std(data):.4f}")
+          
+def smooth(data, window_size=8):
+    """Block averaging smoothing."""
+    return np.convolve(data, np.ones(window_size) / window_size, mode='same')
 
 class TrainingVisualization(QDialog):
     def __init__(self, features, transition_matrix, means, parent=None):
@@ -35,129 +26,135 @@ class TrainingVisualization(QDialog):
         self.win = pg.GraphicsLayoutWidget(show=True)
         layout.addWidget(self.win)
 
-        # Plot features
         self.plot_features(features)
-
-        # Plot transition matrix
         self.plot_transition_matrix(transition_matrix, means)
 
     def plot_features(self, features):
-        # Assuming features are in the format [time, variance, velocity, fixation]
+        # features = [time, variance, acceleration]
         time = features[:, 0]
         variance = features[:, 1]
-        velocity = features[:, 2]
-        acceleration = features[:, 3]
+        acceleration = features[:, 2]
 
         p1 = self.win.addPlot(title="Variance Over Time")
         p1.plot(time, variance, pen='r')
         p1.setLabel('left', "Variance")
         p1.setLabel('bottom', "Time (s)")
 
-        p2 = self.win.addPlot(title="Velocity Over Time", row=1, col=0)
-        p2.plot(time, velocity, pen='b')
-        p2.setLabel('left', "Velocity")
+        p2 = self.win.addPlot(title="Acceleration Over Time", row=1, col=0)
+        p2.plot(time, acceleration, pen='g')
+        p2.setLabel('left', "Acceleration")
         p2.setLabel('bottom', "Time (s)")
 
-        p3 = self.win.addPlot(title="Acceleration Over Time", row=2, col=0)
-        p3.plot(time, acceleration, pen='g')
-        p3.setLabel('left', "Acceleration")
-        p3.setLabel('bottom', "Time (s)")
-
-    def plot_transition_matrix(self, transition_matrix, means):
-        p4 = self.win.addPlot(title="Transition Matrix (Heatmap)", row=3, col=0)
+    def plot_transition_matrix(self, transmat, means):
+        p = self.win.addPlot(title="Transition Matrix (Heatmap)", row=2, col=0)
         img = pg.ImageItem()
-        img.setImage(transition_matrix)
-        p4.addItem(img)
-        p4.setLabel('left', "From State")
-        p4.setLabel('bottom', "To State")
+        img.setImage(transmat)
+        p.addItem(img)
+        p.setLabel('left', "From State")
+        p.setLabel('bottom', "To State")
 
-        # Display means as annotations
+        # Display means text
         for i, mean in enumerate(means):
-            text = pg.TextItem(f"State {i} Mean: {mean}", anchor=(0, 1))
-            text.setPos(i, i)
-            p4.addItem(text)
+            txt = pg.TextItem(f"State {i} Mean: {mean}", anchor=(0,1))
+            txt.setPos(i, i)
+            p.addItem(txt)
+
 
 class HiddenMarkovModel:
     def __init__(self):
-        self.model = hmm.GaussianHMM(n_components=2, covariance_type="diag", init_params='')  # Disable reinitialization
+        """
+        GMM-HMM:
+          2 states, 2 mixtures each, diag covar
+        """
+        self.model = GMMHMM(
+            n_components=2,
+            n_mix=2,
+            covariance_type="diag",
+            n_iter=100,
+            init_params='stmwc'   # Let model re-estimate startprob, transmat, means, weights, covars
+        )
 
-    def train(self, features):
-        """Train HMM using normalized and prepared features."""
+    def train(self, feature):
+        # feature => shape (N, 3): [time, variance, acceleration]
+        # remove time col => shape (N, 2)
+        X = feature[:, 1:]
 
-        feature = np.array(features).reshape(1, -1)  # Ensure it's (1,4)
+        print("Feature Stats Before Training:")
+        print(f"Mean: {np.mean(X, axis=0)}, Std: {np.std(X, axis=0)}")
 
-        # Remove the time column (assumed to be the first column)
-        features = features[:, 1:]  # Retain only variance, velocity, and acceleration
-
-        # Debug: Log feature statistics
-        print(f"Feature Stats Before Training:")
-        print(f"Mean: {np.mean(features, axis=0)}, Std: {np.std(features, axis=0)}")
-
-        # Initialize transition matrix
-        self.model.transmat_ = np.array([[0.6, 0.4], [0.4, 0.6]])
+        # Provide an initial transmat
+        self.model.transmat_ = np.array([
+            [0.7, 0.3],
+            [0.3, 0.7]
+        ])
         print(f"Initial Transition Matrix: {self.model.transmat_}")
 
-        # Initialize means and covariances
-        baseline_mean = np.mean(features, axis=0)
-        baseline_std = np.std(features, axis=0)
-        self.model.means_ = np.array([
-            baseline_mean + 2 * baseline_std,  # State 0: Baseline behavior
-            baseline_mean  # State 1: Deviations (abnormal behavior)
-        ])
-        self.model.covars_ = np.array([
-            (2 * baseline_std)**2,  # Variance for state 0
-            baseline_std**2  # Variance for state 1
-        ])
+        baseline_mean = np.mean(X, axis=0)   # shape (2,)
+        baseline_median = np.median(X, axis=0)  # shape (2,)
+        baseline_std  = np.std(X, axis=0)    # shape (2,)
 
-        # Initialize start probabilities if not set
-        if not hasattr(self.model, 'startprob_'):
-            self.model.startprob_ = np.array([0.5, 0.5])
+        # For 2 states x 2 mixtures x 2 features => shape is (2,2,2).
+        # We'll initialize them fairly close:
+        #   state0 mix0 = baseline
+        #   state0 mix1 = baseline + small offset
+        #   state1 mix0 = baseline + bigger offset
+        #   state1 mix1 = baseline + bigger offset still
+        means_init = np.zeros((2, 2, 2))
+        # State 0:
+        means_init[0, 0] = baseline_median
+        means_init[0, 1] = baseline_median + 0.3 * baseline_std
+        # State 1:
+        means_init[1, 0] = baseline_mean + baseline_std
+        means_init[1, 1] = baseline_mean + 0.5 * baseline_std
 
-        print(f"Initialized Means: {self.model.means_}")
-        
-        # Train the HMM
-        self.model.fit(features)
+        self.model.means_ = means_init
+
+        # Covars => shape (2,2,2) for diag
+        # We'll keep them moderate
+        covars_init = np.zeros((2, 2, 2))
+        # state0 => smaller variance
+        covars_init[0, 0] = (0.5 * baseline_std)**2
+        covars_init[0, 1] = (0.8 * baseline_std)**2
+        # state1 => bigger variance
+        covars_init[1, 0] = (1.2 * baseline_std)**2
+        covars_init[1, 1] = (1.5 * baseline_std)**2
+
+        self.model.covars_ = covars_init
+
+        # Keep a copy of the "before" model
+        model_before = copy.deepcopy(self.model)
+
+        # Fit
+        self.model.fit(X)
         print("HMM training completed successfully!")
+        print(f"Features shape: {X.shape}")
+        print("Trained Transition Matrix:")
+        print(self.model.transmat_)
+        print("Trained Means:")
+        print(self.model.means_)
+        print("Trained Covariances:")
+        print(self.model.covars_)
 
-        # Debug information
-        print(f"Features: {features.shape}")
-        print(f"Transition Matrix:\n{self.model.transmat_}")
-        print(f"Means:\n{self.model.means_}")
-        print(f"Covariances:\n{self.model.covars_}")
+        # Export before/after
+        export_gmm_states_before_after(
+            model_before, self.model,
+            n_states=2, n_mix=2, n_features=2,
+            save_path="exports/training.png"
+        )
 
-        # Show training visualization
         self.visualize_training(feature, self.model.transmat_, self.model.means_)
 
-    def visualize_training(self, features, transition_matrix, means):
-        """Launch training visualization."""
-        export_training_graph(features, transition_matrix, means, os.path.join("./exports", "baseline.png"))
-        self.training_window = TrainingVisualization(features, transition_matrix, means)
-        self.training_window.exec_()  # Show as a modal dialog
-
-    def predict_proba(self, feature_vector):
-        """Predict deception probability for new data."""
-        feature = np.array(feature_vector).reshape(1, -1)  # Ensure it's (1,4)
-        features = feature[:, 1:]  # Retain only variance, velocity, and acceleration
-        raw_probabilities = self.model.predict_proba(features)
-
-        # Apply bounds to avoid hard 0 or 1 probabilities
-        bounded_probabilities = np.clip(raw_probabilities, 0.05, 0.95)
-        # print(f"Input Feature: {feature}")
-        # print(f"Raw State Probabilities: {raw_probabilities}")
-        # print(f"Bounded Probabilities: {bounded_probabilities}")
-        
-        return raw_probabilities
+    def predict_proba(self, feature):
+        # again, remove time => shape (N,2)
+        X = feature[:, 1:]
+        raw_prob = self.model.predict_proba(X)
+        log_summary_statistics(raw_prob, "Raw Probabilities")
+        return raw_prob
 
     def prepare_features(self, x_data, y_data, time_data):
         """
-        Prepare features for HMM training.
-        Features include:
-        - Time elapsed
-        - Normalized variance of gaze positions
-        - Normalized velocity of gaze movement
-        - Normalized acceleration (derivative of velocity)
+        Convert raw x,y,t => [time, variance, acceleration].
         """
-        # Convert inputs to NumPy arrays if they aren't already
         x_data = np.asarray(x_data)
         y_data = np.asarray(y_data)
         time_data = np.asarray(time_data)
@@ -165,77 +162,73 @@ class HiddenMarkovModel:
         if len(time_data) < 3:
             raise ValueError("Not enough data points for feature extraction.")
 
-        # Compute variance over sliding windows of size 2
-        sliding_x = np.lib.stride_tricks.sliding_window_view(x_data, window_shape=2)
-        sliding_y = np.lib.stride_tricks.sliding_window_view(y_data, window_shape=2)
-        variance_x = np.var(sliding_x, axis=1)
-        variance_y = np.var(sliding_y, axis=1)
-        variance = variance_x + variance_y  # Shape: (N-1,)
+        # variance
+        slide_x = np.lib.stride_tricks.sliding_window_view(x_data, 2)
+        slide_y = np.lib.stride_tricks.sliding_window_view(y_data, 2)
+        var_x = np.var(slide_x, axis=1)
+        var_y = np.var(slide_y, axis=1)
+        variance = var_x + var_y  # shape => (N-1,)
 
-        # Compute velocity
-        delta_x = np.diff(x_data)  # Shape: (N-1,)
-        delta_y = np.diff(y_data)  # Shape: (N-1,)
-        delta_time = np.diff(time_data)  # Shape: (N-1,)
-
+        # velocity => needed for acceleration
+        dx = np.diff(x_data)
+        dy = np.diff(y_data)
+        dt = np.diff(time_data)
         with np.errstate(divide='ignore', invalid='ignore'):
-            velocity = np.sqrt(delta_x**2 + delta_y**2) / delta_time  # Shape: (N-1,)
-            velocity = np.nan_to_num(velocity)  # Replace NaNs and infs with 0
+            velocity = np.sqrt(dx**2 + dy**2) / dt
+        velocity = np.nan_to_num(velocity)
 
-        # Compute acceleration (derivative of velocity)
-        acceleration = np.diff(velocity) / np.diff(time_data[:-1])  # Shape: (N-2,)
-        acceleration = np.nan_to_num(acceleration)  # Replace NaNs and infs with 0
+        # acceleration
+        with np.errstate(divide='ignore', invalid='ignore'):
+            acceleration = np.diff(velocity) / np.diff(time_data[:-1])
+        acceleration = np.abs(np.nan_to_num(acceleration))
 
-        # Normalize variance, velocity, and acceleration using Standard Z-Score Normalization
-        variance_trimmed = variance[:-1]  # Shape: (N-2,)
-        velocity_trimmed = velocity[:-1]  # Shape: (N-2,)
+        # align => shape => (N-2,)
+        variance_trim = variance[:-1]
 
-        # Standard Z-Score Normalization
-        variance_mean = np.mean(variance_trimmed)
-        variance_std = np.std(variance_trimmed)
-        variance_norm = (variance_trimmed - variance_mean) / (variance_std if variance_std > 0 else 1)
+        # # z-score
+        # var_mean, var_std = np.mean(variance_trim), np.std(variance_trim)
+        # variance_norm = (variance_trim - var_mean) / (var_std if var_std>0 else 1)
 
-        velocity_mean = np.mean(velocity_trimmed)
-        velocity_std = np.std(velocity_trimmed)
-        velocity_norm = (velocity_trimmed - velocity_mean) / (velocity_std if velocity_std > 0 else 1)
+        # acc_mean, acc_std = np.mean(acceleration), np.std(acceleration)
+        # acceleration_norm = (acceleration - acc_mean) / (acc_std if acc_std>0 else 1)
 
-        acceleration_mean = np.mean(acceleration)
-        acceleration_std = np.std(acceleration)
-        acceleration_norm = (acceleration - acceleration_mean) / (acceleration_std if acceleration_std > 0 else 1)
+        # min-max
+        var_min, var_max = np.min(variance_trim), np.max(variance_trim)
+        variance_norm = (variance_trim - var_min) / (var_max - var_min)
 
-        variance_smooth = smooth(variance_norm)
-        velocity_smooth = smooth(velocity_norm)
-        acceleration_smooth = smooth(acceleration_norm)
+        acc_min, acc_max = np.min(acceleration), np.max(acceleration)
+        acceleration_norm = (acceleration - acc_min) / (acc_max - acc_min)
 
-        # Debug: Log feature statistics
-        log_summary_statistics(variance, "Raw Variance")
-        log_summary_statistics(velocity, "Raw Velocity")
-        log_summary_statistics(acceleration, "Raw Acceleration")
+        # # smoothing
+        # variance_smooth = smooth(variance_norm, 8)
+        # acceleration_smooth = smooth(acceleration_norm, 12)
 
-        log_summary_statistics(variance_norm, "Normalized Variance")
-        log_summary_statistics(velocity_norm, "Normalized Velocity")
-        log_summary_statistics(acceleration_norm, "Normalized Acceleration")
+        variance_smooth = variance_norm
+        acceleration_smooth = acceleration_norm
 
-        log_summary_statistics(variance_smooth, "Smoothed Variance")
-        log_summary_statistics(velocity_smooth, "Smoothed Velocity")
-        log_summary_statistics(acceleration_smooth, "Smoothed Acceleration")
+        # aligned time => (N-2,)
+        aligned_time = time_data[2:]
 
-        # Align time data to match feature shapes
-        aligned_time_data = time_data[2:]  # Shape: (N-2,)
-
-        # **Ensure all feature arrays have the same length**
-        assert aligned_time_data.shape[0] == variance_smooth.shape[0] == velocity_smooth.shape[0] == acceleration_smooth.shape[0], \
-            f"Feature lengths do not match: Time({aligned_time_data.shape[0]}), Variance({variance_smooth.shape[0]}), " \
-            f"Velocity({velocity_smooth.shape[0]}), Acceleration({acceleration_smooth.shape[0]})"
-
-        # Stack features together without additional slicing
+        # final => shape (N-2,3)
         features = np.column_stack([
-            aligned_time_data,      # Time elapsed
-            variance_smooth,        # Smoothed variance
-            velocity_smooth,        # Smoothed velocity
-            acceleration_smooth     # Smoothed acceleration
-        ])  # Shape: (N-2, 4)
+            aligned_time,
+            variance_smooth,
+            acceleration_smooth
+        ])
 
-        # Debug: Print prepared features
-        print(f"Prepared Smoothed Features: {features}")
+        # debug
+        log_summary_statistics(variance, "Raw Variance")
+        log_summary_statistics(velocity, "Velocity (internal only)")
+        log_summary_statistics(acceleration, "Raw Acceleration")
+        log_summary_statistics(variance_norm, "Norm Variance")
+        log_summary_statistics(acceleration_norm, "Norm Acceleration")
+        log_summary_statistics(variance_smooth, "Smooth Variance")
+        log_summary_statistics(acceleration_smooth, "Smooth Acceleration")
 
+        print(f"Prepared Features:\n{features}")
         return features
+
+    def visualize_training(self, features, transmat, means):
+        export_training_graph(features, transmat, means, os.path.join("exports", "baseline.png"))
+        tv = TrainingVisualization(features, transmat, means)
+        tv.exec_()
