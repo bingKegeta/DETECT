@@ -6,97 +6,6 @@ import pyqtgraph as pg
 from PyQt5.QtWidgets import QApplication
 from PyQt5 import QtCore
 
-def _gaussian_pdf(x, mu, sigma):
-    return (1.0 / (math.sqrt(2.0 * math.pi) * sigma)) * np.exp(-0.5 * ((x - mu) / sigma)**2)
-
-def export_gmm_states_before_after(
-    model_before,
-    model_after,
-    n_states=2,
-    n_mix=1,
-    n_features=2,   # or however many features you actually have
-    save_path="exports/training.png"
-):
-    """
-    Plots each state's GMM curves for 'before' and 'after' training in a 2×2 layout:
-      - Top row: State 0  (Before vs After)
-      - Bottom row: State 1 (Before vs After)
-    Each subplot shows multiple curves (one per mixture-feature).
-    """
-    # Create an offscreen application if none exists
-    app_created = False
-    if not QApplication.instance():
-        _ = QApplication([])
-        app_created = True
-
-    win = pg.GraphicsLayoutWidget(show=False)
-    win.resize(1400, 800)
-
-    # We'll keep domain from -3 to +3, sampling more points
-    x_vals = np.linspace(-3, 3, 400)
-
-    def make_sub_plot(state_idx, col_idx):
-        title = f"State {state_idx} - {'Before' if col_idx == 0 else 'After'} Training"
-        plt_item = win.addPlot(row=state_idx, col=col_idx, title=title)
-        legend = plt_item.addLegend()
-        legend.opts["labelTextSize"] = "8pt"
-        legend.setOffset((10, 10))
-
-        plt_item.setLabel('left', 'PDF')
-        plt_item.setLabel('bottom', 'Feature Value')
-        plt_item.setXRange(-3, 3)
-        plt_item.showGrid(x=True, y=True, alpha=0.2)
-
-        bottom_axis = plt_item.getAxis('bottom')
-        bottom_axis.setTickSpacing(0.5, 0.1)
-        return plt_item
-
-    # For 2 states => 2×2 grid
-    plots = [
-        [make_sub_plot(0, 0), make_sub_plot(0, 1)],
-        [make_sub_plot(1, 0), make_sub_plot(1, 1)],
-    ]
-
-    def get_params(model, st, mx, feat):
-        mu = model.means_[st, mx, feat]
-        var = model.covars_[st, mx, feat]
-        return mu, np.sqrt(var)
-
-    # Use different line styles for features
-    feature_styles = [
-        (QtCore.Qt.SolidLine, 'r'),   # For feature 0
-        (QtCore.Qt.DashLine,  'g'),   # For feature 1
-        # Add more if you have >2 features
-    ]
-
-    for st in range(n_states):
-        for col_idx in (0, 1):
-            plot_item = plots[st][col_idx]
-            current_model = model_before if col_idx == 0 else model_after
-
-            for mx in range(n_mix):
-                for feat in range(min(n_features, len(feature_styles))):
-                    mu, std = get_params(current_model, st, mx, feat)
-                    y_vals = _gaussian_pdf(x_vals, mu, std)
-
-                    style, color_str = feature_styles[feat]
-                    label = f"Mix {mx}, Feat {feat}"
-                    plot_item.plot(
-                        x_vals, y_vals,
-                        pen=pg.mkPen(color=color_str, width=2, style=style),
-                        name=label
-                    )
-
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    screenshot = win.grab()
-    screenshot.save(save_path, 'PNG')
-    print(f"Exported GMM curves to: {save_path}")
-
-    # if app_created:
-    #     win.show()
-    #     QApplication.instance().exec_()
-
-
 def export_features_csv(x_data, y_data, time_data, output_file):
     """
     Modified to store the raw gaze arrays (time, x, y) instead of final features.
@@ -115,27 +24,6 @@ def export_features_csv(x_data, y_data, time_data, output_file):
             y_ = y_data[i] if i < len(y_data) else 0
             writer.writerow([t, x_, y_])
     print(f"Exported raw gaze data (time, x, y) to {output_file}")
-
-def load_features_data(file_path):
-    """
-    We'll keep the same function name, but interpret columns as [Time, X, Y].
-    Return them as x_arr, y_arr, t_arr in that order => (x_data,y_data,time_data).
-    """
-    x_list = []
-    y_list = []
-    t_list = []
-    try:
-        with open(file_path, 'r', newline='') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                # row keys => "Time", "X", "Y"
-                t_list.append(float(row["Time"]))
-                x_list.append(float(row["X"]))
-                y_list.append(float(row["Y"]))
-    except Exception as e:
-        print(f"Error reading features CSV: {e}")
-        return [], [], []
-    return np.array(x_list), np.array(y_list), np.array(t_list)
 
 def export_csv(features, time_data, deception_data, output_file):
     """
@@ -238,35 +126,6 @@ def export_graph(features, time_data, deception_data, save_path):
         p3.setLabel('left', 'Probability')
         p3.setLabel('bottom', 'Time (s)')
         p3.plot(time_data, deception_data, pen='m')
-
-        screenshot = export_widget.grab()
-        screenshot.save(save_path, 'PNG')
-        print(f"Graph image saved to: {save_path}")
-    except Exception as e:
-        print(f"Error exporting graph: {e}")
-
-def export_training_graph(features, transition_matrix, means, save_path):
-    """
-    Similar approach for the training graph, focusing on 2 features + time. 
-    """
-    try:
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        export_widget = pg.GraphicsLayoutWidget(show=False)
-        export_widget.resize(800, 600)
-
-        t_f = features[:, 0]
-        f1 = features[:, 1]
-        f2 = features[:, 2]
-
-        p1 = export_widget.addPlot(title="Feature1 Over Time")
-        p1.setLabel('left', 'Feature1')
-        p1.setLabel('bottom', 'Time (s)')
-        p1.plot(t_f, f1, pen='r')
-
-        p2 = export_widget.addPlot(title="Feature2 Over Time", row=1, col=0)
-        p2.setLabel('left', 'Feature2')
-        p2.setLabel('bottom', 'Time (s)')
-        p2.plot(t_f, f2, pen='b')
 
         screenshot = export_widget.grab()
         screenshot.save(save_path, 'PNG')

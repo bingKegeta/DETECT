@@ -2,9 +2,6 @@
   "source": "video",
   "session_video": null,
   "session_csv": "exports/session.csv",
-  "baseline": true,
-  "baseline_video": null,
-  "baseline_csv": "exports/baseline.csv",
   "export": {
     "csv": true,
     "graph": true,

@@ -93,8 +93,7 @@ def get_affine_transform(landmarks, img_w, img_h):
 
     return cv2.getAffineTransform(src_points, dst_points)
 
-# Process the baseline video for gaze data
-def process_baseline_video(video_path):
+
     x_data, y_data, time_data = [], [], []
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30

@@ -1,7 +1,7 @@
 import csv
 import numpy as np
 
-def load_features_data(file_path):
+def load_data(file_path):
     """
     Load CSV data with columns [Time, X, Y] and return x_data, y_data, time_data arrays.
     """

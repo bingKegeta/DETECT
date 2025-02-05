@@ -1,103 +1,46 @@
-# HMM Branch - Hidden Markov Model for Deception Detection
+# Real-Time Deterministic Deception Analysis
 
-## Overview
-This branch introduces a Hidden Markov Model (HMM) for detecting deception based on gaze tracking data. It incorporates the following features:
-- **HMM Model**: Trained using baseline gaze data (variance and acceleration) to classify states (e.g., truthful vs. deceptive).
-- **PyQt Training Visualization**: Visual representation of model training, including feature distributions and transition probabilities.
-- **Deception Probability Computation**: Calculates probabilities for session data and includes them in the exported CSV.
-- **Gaussian Mixture Emission**: Exported visualizations for Gaussian emission probabilities.
+This repository implements a **deterministic algorithm** for computing deception probabilities in real time using gaze-tracking data. Below is an overview of the key files, the approach taken, and how to configure the application.
 
-## Key Features
+---
 
-### Flexible Baseline Handling
-- **Baseline Video**: Process a baseline video to generate x, y, and time data for training.
-- **Baseline CSV**: Directly use a preprocessed baseline CSV file containing x, y, and time data.
-- Configuration handled via `config.json`.
+## Core Files
 
-### Session Data Analysis
-- Processes session videos to compute gaze data and deception probabilities.
-- Exports results in CSV format with `Time`, `X Coordinate`, `Y Coordinate`, and `Deception Probability`.
+1. **`analysis.py`**  
+   - Defines a simple `Analysis` class that processes **one gaze point at a time** (`time, x, y`) and returns:
+     1. A scaled “variance” measure (distance squared from the last point),
+     2. A scaled “acceleration” measure, and
+     3. A **final deception probability** in `[0.01..0.95]`.
+   - Internally keeps minimal state (`last_x, last_y, last_time, last_velocity`) so each frame can be processed in isolation.
+   - Uses **clipping** (e.g., `[0..10]`) and a linear transform to map each measure into `[0.01..0.95`.
+   
+2. **`main.py`**  
+   - Demonstrates real-time capturing of gaze data (either from **webcam** or **session video** or a **CSV** of `(x, y, time)` points).
+   - On each new gaze point, calls `Analysis.single_update(time, x, y)` to compute scaled features plus a probability.
+   - Accumulates those features (`variance_norm`, `acceleration_norm`) along with the final probability in arrays, so you can export them at session end.
 
-### Gaussian Mixture Model (GMM-HMM)
-- **Number of Mixtures**: Configurable in `src/hmm.py`.
-- **Transition Matrix**: Adjustable to reflect state transition probabilities.
-- **Emission Parameters**: Gaussian curves adapt to training data and are exported as `training.png`.
+3. **Other Utility Files**  
+   - `export.py`, `utils.py`, etc. handle exporting CSVs, graphs, and any needed configuration loading.  
+   - `args.py` or `config.json` parse the user’s input or define additional runtime parameters.
 
-### Feature Processing
-- **Features**: Variance and acceleration (velocity removed).
-- **Normalization**: Min-max normalization (0 to 1) applied to both variance and absolute acceleration.
-- **Smoothing**: Stronger smoothing applied to acceleration to reduce noise.
+---
 
-### Exports
-1. **`baseline.csv`**: Stores x, y, and time data from the baseline video.
-2. **`baseline.png`**: Visualization of baseline feature distributions and HMM training results.
-3. **`session.csv`**: Stores x, y, and time data from the session video.
-4. **`gaze_data.csv`**: Processed session data, including deception probabilities.
-5. **`final_comprehensive_plots.png`**: Graph summarizing variance, acceleration, and deception probabilities over time.
-6. **`training.png`**: Gaussian curves for state emission probabilities before and after training.
+## Configuration (`config.json`)
 
-## Example `config.json`
+A typical `config.json` might look like:
+
 ```json
 {
   "source": "video",
-  "baseline_video": "test_media/baseline_video.mp4",
-  "baseline_csv": "exports/baseline.csv",
-  "session_video": "test_media/session_video.mp4",
-  "session_csv": "exports/session.csv",
+  "session_video": "my_session.mp4",
+  "session_csv": null,
+  "dot_display": false,
+  "affine": false,
+  "categorize": false,
+  "export_dir": "./exports",
   "export": {
     "csv": true,
     "graph": true,
-    "animation": true
-  },
-  "export_dir": "./exports",
-  "dot_display": false,
-  "categorize": true,
-  "graph": true,
-  "affine": true,
-  "csv_interval": 1.0,
-  "baseline": true
+    "animation": false
+  }
 }
-```
-
-### Explanation of Parameters
-
-#### Main Parameters
-- **`source`**: Input source for gaze tracking. Options:
-  - `"webcam"`: Real-time tracking using the webcam.
-  - `"video"`: Analysis of a video file.
-  - `"image"`: Analysis of a single image.
-
-#### Session Parameters
-- **`session_video`**: Path to the session video file.
-- **`session_csv`**: Path to an existing session CSV file. If provided, x, y, and time data will be reprocessed into features.
-
-#### Baseline Parameters
-- **`baseline`**: (`true`/`false`) Indicates whether baseline data is used for training.
-- **`baseline_video`**: Path to the baseline video file.
-- **`baseline_csv`**: Path to an existing baseline CSV file.
-
-#### Export Options
-- **`csv`**: (`true`/`false`) Exports gaze data to a CSV file.
-- **`graph`**: (`true`/`false`) Exports graphs to an image file.
-- **`animation`**: (`true`/`false`) Exports animations (if implemented).
-- **`export_dir`**: Directory for saving exported files.
-
-#### Processing Options
-- **`dot_display`**: Displays detected gaze points for visualization.
-- **`categorize`**: Categorizes gaze direction (e.g., left, center, right).
-- **`graph`**: Displays real-time graphs of gaze data.
-- **`affine`**: Applies affine transformations to stabilize gaze coordinates.
-
-### Updating HMM Parameters
-- **Number of Mixtures**: Change `n_mix` in `src/hmm.py`.
-- **Transition Matrix**: Update `self.model.transmat_` in `src/hmm.py`.
-- **Emission Means and Covariances**: Adjust initialization logic in `src/hmm.py`.
-
-## Usage
-1. Modify `config.json` with the desired settings.
-2. Run the application:
-   ```bash
-   python main.py config.json
-   ```
-3. View exported CSV and images in the specified output directory.
-
